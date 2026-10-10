@@ -1,0 +1,2468 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>国际象棋</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    color: #e0e0e0;
+  }
+
+  .game-container {
+    display: flex;
+    gap: 40px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .board-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .status-bar {
+    width: 560px;
+    max-width: 90vw;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 12px;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 18px;
+    backdrop-filter: blur(10px);
+    min-height: 52px;
+  }
+
+  .turn-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+  }
+
+  .turn-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid #888;
+  }
+  .turn-dot.white { background: #f0d9b5; }
+  .turn-dot.black { background: #333; }
+
+  .status-text {
+    font-size: 15px;
+    color: #ff6b6b;
+    font-weight: 700;
+  }
+
+  .ai-thinking {
+    font-size: 15px;
+    color: #4fc3f7;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .thinking-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #4fc3f7;
+    animation: dot-pulse 1.2s ease-in-out infinite;
+  }
+  .thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+  .thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dot-pulse {
+    0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+    40% { opacity: 1; transform: scale(1); }
+  }
+
+  .board-container { position: relative; }
+
+  .chess-board {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(8, 1fr);
+    width: 560px;
+    height: 560px;
+    max-width: 90vw;
+    max-height: 90vw;
+    border: 4px solid #3a3a3a;
+    border-radius: 4px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    overflow: hidden;
+  }
+
+  .square {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 52px;
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    transition: background 0.15s;
+  }
+  .square.light { background: #f0d9b5; }
+  .square.dark { background: #b58863; }
+  .square.selected {
+    background: #ffd500 !important;
+    box-shadow: inset 0 0 0 3px #ff8c00;
+  }
+  .square.valid-move::after, .square.move-trade::after, .square.move-risk::after {
+    content: '';
+    position: absolute;
+    width: 28%; height: 28%;
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .square.valid-move::after { background: rgba(0,180,0,0.55); }
+  .square.move-trade::after { background: rgba(255,170,0,0.65); }
+  .square.move-risk::after { background: rgba(220,0,0,0.65); }
+  .square.valid-capture::after {
+    content: '';
+    position: absolute;
+    width: 100%; height: 100%;
+    box-shadow: inset 0 0 0 4px rgba(220,0,0,0.7);
+    border-radius: 4px;
+    pointer-events: none;
+  }
+  .square.attacked {
+    box-shadow: inset 0 0 0 3px rgba(255,140,0,0.7);
+  }
+  .square.hint-from {
+    box-shadow: inset 0 0 0 4px #4488ff !important;
+  }
+  .square.hint-to {
+    box-shadow: inset 0 0 0 4px #4488ff !important;
+    animation: hint-pulse 1s ease-in-out infinite;
+  }
+  @keyframes hint-pulse {
+    0%,100% { box-shadow: inset 0 0 0 4px rgba(68,136,255,0.6) !important; }
+    50% { box-shadow: inset 0 0 0 4px rgba(68,136,255,1) !important; }
+  }
+  .square.last-move { background: #f7e88c !important; }
+  .square.last-move.dark { background: #d4a84b !important; }
+  .square.in-check {
+    box-shadow: inset 0 0 0 4px red;
+    animation: check-pulse 0.8s ease-in-out infinite;
+  }
+  @keyframes check-pulse {
+    0%,100% { box-shadow: inset 0 0 0 4px rgba(255,0,0,0.6); }
+    50% { box-shadow: inset 0 0 0 4px rgba(255,0,0,1); }
+  }
+
+  .piece {
+    line-height: 1;
+    text-shadow: 0 2px 3px rgba(0,0,0,0.3);
+    transition: transform 0.1s;
+  }
+  .piece.white {
+    color: #fff;
+    text-shadow: 0 0 1px #000, 0 0 2px #000, 0 0 3px #000, 0 2px 3px rgba(0,0,0,0.4);
+  }
+  .piece.black {
+    color: #1a1a1a;
+    text-shadow: 0 0 1px #555, 0 2px 3px rgba(255,255,255,0.1);
+  }
+  .square:hover .piece { transform: scale(1.1); }
+
+  .coord-label {
+    position: absolute;
+    font-size: 11px;
+    font-weight: 700;
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .coord-file { bottom: 2px; right: 4px; }
+  .coord-rank { top: 2px; left: 4px; }
+  .light .coord-label { color: #b58863; }
+  .dark .coord-label { color: #f0d9b5; }
+
+  /* Side panel */
+  .side-panel {
+    width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .panel-card {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 12px;
+    padding: 16px;
+    backdrop-filter: blur(10px);
+  }
+  .panel-card h3 {
+    font-size: 15px;
+    margin-bottom: 12px;
+    color: #aaa;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    padding-bottom: 8px;
+  }
+
+  .setting-row { margin-bottom: 12px; }
+  .setting-row:last-child { margin-bottom: 0; }
+  .setting-row > label {
+    display: block;
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 6px;
+  }
+
+  .toggle-group {
+    display: flex;
+    gap: 4px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    padding: 3px;
+  }
+  .toggle-btn {
+    flex: 1;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: transparent;
+    color: #aaa;
+  }
+  .toggle-btn.active {
+    background: linear-gradient(135deg, #e94560, #c23616);
+    color: #fff;
+  }
+  .toggle-btn:hover:not(.active) {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+  }
+
+  select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.05);
+    color: #fff;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  select option { background: #1a1a2e; }
+
+  .captured-row {
+    min-height: 40px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    font-size: 28px;
+    line-height: 1;
+    align-items: center;
+  }
+  .captured-row .empty-hint { font-size: 13px; color: #666; }
+  .captured-row.white-captured .piece { color: #ddd; }
+  .captured-row.black-captured .piece { color: #222; }
+
+  .material-section {
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+  }
+  .material-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .material-label {
+    font-size: 13px;
+    font-weight: 700;
+    width: 16px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+  .material-label.white { color: #f0d9b5; }
+  .material-label.black { color: #777; }
+  .material-bar {
+    flex: 1;
+    height: 20px;
+    background: rgba(0,0,0,0.3);
+    border-radius: 10px;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .material-bar-center {
+    position: absolute;
+    top: 0; bottom: 0;
+    left: 50%;
+    width: 2px;
+    background: rgba(255,255,255,0.2);
+  }
+  .material-bar-fill {
+    position: absolute;
+    top: 0; bottom: 0;
+    transition: all 0.3s ease;
+    border-radius: 10px;
+  }
+  .material-bar-fill.white {
+    background: linear-gradient(90deg, #f0d9b5, #e8c89a);
+    right: 50%;
+  }
+  .material-bar-fill.black {
+    background: linear-gradient(90deg, #555, #333);
+    left: 50%;
+  }
+  .material-score {
+    font-size: 14px;
+    font-weight: 700;
+    min-width: 30px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .material-score.white-adv { color: #6fc3f7; }
+  .material-score.black-adv { color: #ff8a65; }
+  .material-score.even { color: #888; }
+  .piece-value-legend {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    font-size: 12px;
+    color: #999;
+    flex-wrap: wrap;
+  }
+  .piece-value-legend span { display: flex; align-items: center; gap: 3px; }
+  .piece-value-legend .v { color: #4fc3f7; font-weight: 700; }
+
+  .move-list {
+    max-height: 200px;
+    overflow-y: auto;
+    font-family: "Courier New", monospace;
+    font-size: 14px;
+  }
+  .move-list::-webkit-scrollbar { width: 6px; }
+  .move-list::-webkit-scrollbar-thumb { background: #555; border-radius: 3px; }
+  .move-entry {
+    display: flex;
+    gap: 8px;
+    padding: 3px 4px;
+    border-radius: 4px;
+  }
+  .move-entry:nth-child(odd) { background: rgba(255,255,255,0.05); }
+  .move-num { color: #888; min-width: 28px; }
+  .move-white { color: #f0d9b5; flex: 1; }
+  .move-black { color: #b58863; flex: 1; }
+
+  .btn-row { display: flex; gap: 10px; }
+  .btn {
+    flex: 1;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: #fff;
+  }
+  .btn-primary { background: linear-gradient(135deg, #e94560, #c23616); }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(233,69,96,0.4); }
+  .btn-secondary { background: rgba(255,255,255,0.15); }
+  .btn-secondary:hover { background: rgba(255,255,255,0.25); }
+  .btn-hint { background: linear-gradient(135deg, #4488ff, #3366dd); }
+  .btn-hint:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(68,136,255,0.4); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* 教学提示 */
+  .teach-tip {
+    width: 100%;
+    background: rgba(68,136,255,0.12);
+    border: 1px solid rgba(68,136,255,0.3);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: #9bc1ff;
+    line-height: 1.5;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+  }
+  .teach-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .teach-toggle-row input[type="checkbox"] {
+    width: 18px; height: 18px;
+    cursor: pointer;
+    accent-color: #4488ff;
+  }
+  .teach-toggle-row label {
+    font-size: 14px;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  /* 理论走法高亮（教学模式：选中棋子时显示其理论走法范围） */
+  .square.theoretical::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(68, 136, 255, 0.18);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .square.theoretical.dark::before {
+    background: rgba(68, 136, 255, 0.28);
+  }
+
+  /* 棋子规则卡（教学模式：选中棋子时显示走法规则） */
+  .piece-rule-card {
+    width: 560px;
+    max-width: 90vw;
+    background: linear-gradient(135deg, rgba(68,136,255,0.15), rgba(68,136,255,0.06));
+    border: 1px solid rgba(68,136,255,0.4);
+    border-radius: 10px;
+    padding: 12px 16px;
+    display: none;
+    align-items: center;
+    gap: 14px;
+    backdrop-filter: blur(10px);
+  }
+  .piece-rule-card.active { display: flex; }
+  .prc-symbol {
+    font-size: 42px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .prc-symbol.white { color: #fff; text-shadow: 0 0 1px #000, 0 0 2px #000, 0 0 3px #000; }
+  .prc-symbol.black { color: #1a1a1a; text-shadow: 0 0 1px #888; }
+  .prc-content { flex: 1; min-width: 0; }
+  .prc-name { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 4px; }
+  .prc-rule { font-size: 13px; color: #ccc; line-height: 1.5; }
+  .prc-special { font-size: 12px; color: #9bc1ff; margin-top: 4px; line-height: 1.5; }
+
+  /* 新手教程 */
+  .lesson-bar {
+    width: 560px;
+    max-width: 90vw;
+    background: linear-gradient(135deg, rgba(233,69,96,0.15), rgba(233,69,96,0.06));
+    border: 1px solid rgba(233,69,96,0.4);
+    border-radius: 10px;
+    padding: 10px 16px;
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    backdrop-filter: blur(10px);
+  }
+  .lesson-bar.active { display: flex; }
+  .lesson-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .lesson-title { font-size: 15px; font-weight: 700; color: #fff; }
+  .lesson-desc { font-size: 13px; color: #ccc; line-height: 1.4; }
+  .lesson-progress { font-size: 12px; color: #ff8a65; font-weight: 600; }
+  .lesson-bar .btn { padding: 4px 12px; font-size: 12px; flex: none; }
+  .review-bar {
+    width: 560px;
+    max-width: 90vw;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 16px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(76,175,80,0.16), rgba(68,136,255,0.08));
+    border: 1px solid rgba(76,175,80,0.4);
+  }
+  .review-bar.active { display: flex; }
+  .review-head, .review-controls { display: flex; align-items: center; gap: 8px; }
+  .review-head { justify-content: space-between; }
+  .review-title { font-size: 15px; font-weight: 700; color: #fff; }
+  .review-progress { font-size: 12px; color: #9bc1ff; }
+  .review-result { min-height: 38px; font-size: 13px; line-height: 1.5; color: #cfe8ff; }
+  .review-controls .btn, .review-head .btn { padding: 7px 10px; font-size: 12px; }
+  .lesson-list-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .lesson-list-item:hover { background: rgba(255,255,255,0.1); border-color: rgba(68,136,255,0.4); }
+  .lesson-list-item.completed { background: rgba(0,180,0,0.1); border-color: rgba(0,180,0,0.3); }
+  .lesson-list-item .lli-num { font-size: 24px; font-weight: 700; color: #4488ff; min-width: 30px; }
+  .lesson-list-item.completed .lli-num { color: #4caf50; }
+  .lesson-list-item .lli-title { font-size: 15px; font-weight: 600; color: #fff; }
+  .lesson-list-item .lli-desc { font-size: 12px; color: #888; margin-top: 2px; }
+  .lesson-list-item .lli-status { margin-left: auto; font-size: 16px; }
+
+  /* Promotion modal */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: #1a1a2e;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 16px;
+    padding: 30px;
+    text-align: center;
+  }
+  .modal h2 { margin-bottom: 20px; font-size: 20px; }
+  .promo-choices { display: flex; gap: 12px; }
+  .promo-choice {
+    width: 70px; height: 70px;
+    font-size: 48px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,0.1);
+    border: 2px solid transparent;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .promo-choice:hover { border-color: #ffd500; background: rgba(255,213,0,0.15); }
+
+  /* Game over modal */
+  .game-over-modal {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.8);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+  }
+  .game-over-modal.active { display: flex; }
+  .game-over-box {
+    background: linear-gradient(135deg, #1a1a2e, #0f3460);
+    border: 2px solid #e94560;
+    border-radius: 20px;
+    padding: 40px 50px;
+    text-align: center;
+  }
+  .game-over-box h1 { font-size: 32px; margin-bottom: 10px; }
+  .game-over-box p { font-size: 18px; color: #aaa; margin-bottom: 24px; }
+
+  /* 棋子图例 */
+  .piece-legend {
+    width: 560px;
+    max-width: 90vw;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
+    padding: 12px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    justify-content: center;
+    backdrop-filter: blur(10px);
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    color: #ccc;
+  }
+  .legend-symbol {
+    font-size: 26px;
+    line-height: 1;
+  }
+  .legend-symbol.w { color: #fff; text-shadow: 0 0 1px #000, 0 0 2px #000; }
+  .legend-symbol.b { color: #1a1a1a; text-shadow: 0 0 1px #888; }
+
+  @media (max-width: 900px) {
+    .game-container { flex-direction: column; }
+    .side-panel { width: 560px; max-width: 90vw; }
+    .square { font-size: 8vw; }
+  }
+</style>
+</head>
+<body>
+
+<div class="game-container">
+  <div class="board-wrapper">
+    <div class="status-bar">
+      <div class="turn-indicator">
+        <div class="turn-dot" id="turnDot"></div>
+        <span id="turnText">白方行棋</span>
+      </div>
+      <div class="status-text" id="statusText"></div>
+      <div class="ai-thinking" id="aiThinking" style="display:none;">
+        <span>AI思考中</span>
+        <span class="thinking-dot"></span>
+        <span class="thinking-dot"></span>
+        <span class="thinking-dot"></span>
+      </div>
+    </div>
+    <div class="piece-rule-card" id="pieceRuleCard">
+      <span class="prc-symbol" id="prcSymbol"></span>
+      <div class="prc-content">
+        <div class="prc-name" id="prcName"></div>
+        <div class="prc-rule" id="prcRule"></div>
+        <div class="prc-special" id="prcSpecial"></div>
+      </div>
+    </div>
+    <div class="lesson-bar" id="lessonBar">
+      <div class="lesson-header">
+        <span class="lesson-title" id="lessonTitle"></span>
+        <button class="btn btn-secondary" id="lessonExitBtn">退出教程</button>
+      </div>
+      <div class="lesson-desc" id="lessonDesc"></div>
+      <div class="lesson-progress" id="lessonProgress"></div>
+      <button class="btn btn-primary" id="lessonNextBtn" style="display:none; align-self: flex-end; padding: 8px 20px;">下一课</button>
+    </div>
+    <div class="review-bar" id="reviewBar">
+      <div class="review-head">
+        <div>
+          <span class="review-title">🔍 离线轻量复盘</span>
+          <span class="review-progress" id="reviewProgress"></span>
+        </div>
+        <button class="btn btn-secondary" id="reviewExitBtn">退出复盘</button>
+      </div>
+      <div class="review-result" id="reviewResult">使用上一步、下一步查看局面，再点击“分析当前局面”。</div>
+      <div class="review-controls">
+        <button class="btn btn-secondary" id="reviewPrevBtn">← 上一步</button>
+        <button class="btn btn-hint" id="reviewAnalyzeBtn">分析当前局面</button>
+        <button class="btn btn-secondary" id="reviewNextBtn">下一步 →</button>
+      </div>
+    </div>
+    <div class="teach-tip" id="teachTip">点击你的棋子，查看安全走法（绿=安全，黄=交换，红=会丢子）</div>
+    <div class="board-container">
+      <div class="chess-board" id="board"></div>
+    </div>
+    <div class="piece-legend">
+      <div class="legend-item"><span class="legend-symbol w">♔</span><span class="legend-symbol b">♚</span> 王</div>
+      <div class="legend-item"><span class="legend-symbol w">♕</span><span class="legend-symbol b">♛</span> 后</div>
+      <div class="legend-item"><span class="legend-symbol w">♖</span><span class="legend-symbol b">♜</span> 车</div>
+      <div class="legend-item"><span class="legend-symbol w">♗</span><span class="legend-symbol b">♝</span> 象</div>
+      <div class="legend-item"><span class="legend-symbol w">♘</span><span class="legend-symbol b">♞</span> 马</div>
+      <div class="legend-item"><span class="legend-symbol w">♙</span><span class="legend-symbol b">♟</span> 兵</div>
+    </div>
+  </div>
+
+  <div class="side-panel">
+    <div class="panel-card">
+      <h3>对局设置</h3>
+      <div class="setting-row">
+        <label>难度</label>
+        <select id="difficultySelect">
+          <option value="easy" selected>入门</option>
+          <option value="simple">简单</option>
+          <option value="normal">普通</option>
+          <option value="hard">困难</option>
+          <option value="extreme">极难（思考2秒左右）</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label>玩家执子</label>
+        <div class="toggle-group" id="colorToggle">
+          <button class="toggle-btn active" data-color="w">执白（先手）</button>
+          <button class="toggle-btn" data-color="b">执黑（后手）</button>
+        </div>
+      </div>
+      <div class="teach-toggle-row">
+        <input type="checkbox" id="teachMode" checked>
+        <label for="teachMode">教学模式（走法安全提示 + 被攻击提醒）</label>
+      </div>
+    </div>
+
+    <div class="panel-card">
+      <h3>被吃棋子</h3>
+      <div class="material-section">
+        <div class="material-bar-wrap">
+          <span class="material-label white">白</span>
+          <div class="material-bar">
+            <div class="material-bar-center"></div>
+            <div class="material-bar-fill white" id="matBarW" style="width:0%"></div>
+            <div class="material-bar-fill black" id="matBarB" style="width:0%"></div>
+          </div>
+          <span class="material-label black">黑</span>
+          <span class="material-score even" id="matScore">0</span>
+        </div>
+        <div class="piece-value-legend">
+          <span>♙<span class="v">1</span></span>
+          <span>♘<span class="v">3</span></span>
+          <span>♗<span class="v">3</span></span>
+          <span>♖<span class="v">5</span></span>
+          <span>♕<span class="v">9</span></span>
+        </div>
+      </div>
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px;color:#888;margin-bottom:4px;">白方损失：</div>
+        <div class="captured-row white-captured" id="whiteCaptured"></div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#888;margin-bottom:4px;">黑方损失：</div>
+        <div class="captured-row black-captured" id="blackCaptured"></div>
+      </div>
+    </div>
+
+    <div class="panel-card">
+      <h3>行棋记录</h3>
+      <div class="move-list" id="moveList">
+        <div style="color:#666;font-size:13px;">尚无行棋记录</div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-primary" id="newGameBtn">新对局</button>
+      <button class="btn btn-hint" id="hintBtn">提示</button>
+      <button class="btn btn-secondary" id="undoBtn">悔棋</button>
+    </div>
+    <div class="btn-row" style="margin-top: 10px;">
+      <button class="btn btn-secondary" id="tutorialBtn" style="width: 100%;">📚 新手教程</button>
+      <button class="btn btn-secondary" id="reviewBtn" style="width: 100%;">🔍 复盘</button>
+    </div>
+  </div>
+</div>
+
+<!-- Promotion Modal -->
+<div class="modal-overlay" id="promoModal">
+  <div class="modal">
+    <h2>选择升变棋子</h2>
+    <div class="promo-choices" id="promoChoices"></div>
+  </div>
+</div>
+
+<!-- Game Over Modal -->
+<div class="game-over-modal" id="gameOverModal">
+  <div class="game-over-box">
+    <h1 id="gameOverTitle">对局结束</h1>
+    <p id="gameOverMsg"></p>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="gameOverReviewBtn" style="padding:12px 24px;">🔍 复盘本局</button>
+      <button class="btn btn-primary" id="gameOverNewBtn" style="padding:12px 24px;">开始新对局</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tutorial Modal -->
+<div class="modal-overlay" id="tutorialModal">
+  <div class="modal" style="max-width: 460px; padding: 24px;">
+    <h2 style="margin-bottom: 16px;">📚 新手教程</h2>
+    <div id="lessonList" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 8px;"></div>
+    <div id="graduationEntry" style="display: none; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 10px; background: linear-gradient(135deg, #fef3c7, #fde68a); border: 2px solid #f59e0b; cursor: pointer; margin-bottom: 16px; transition: transform 0.15s;" onmouseover="this.style.transform='scale(1.02)'" onmouseout="this.style.transform='scale(1)'">
+      <span style="font-size: 28px;">🎓</span>
+      <div style="flex:1;">
+        <div style="font-weight: 700; font-size: 15px; color: #92400e;">毕业考试</div>
+        <div style="font-size: 12px; color: #92400e; opacity: 0.8;">完成全部课程后解锁，通过即可毕业</div>
+      </div>
+      <span style="font-size: 20px; color: #92400e;">▶</span>
+    </div>
+    <button class="btn btn-secondary" id="tutorialCloseBtn" style="width: 100%;">关闭</button>
+  </div>
+</div>
+
+<script>
+// ===================== Constants =====================
+const PIECES = {
+  'wK': '♔', 'wQ': '♕', 'wR': '♖', 'wB': '♗', 'wN': '♘', 'wP': '♙',
+  'bK': '♚', 'bQ': '♛', 'bR': '♜', 'bB': '♝', 'bN': '♞', 'bP': '♟'
+};
+const PIECE_NAMES = { 'K': '王', 'Q': '后', 'R': '车', 'B': '象', 'N': '马', 'P': '兵' };
+const FILES = ['a','b','c','d','e','f','g','h'];
+const PIECE_DISPLAY_VALUES = { P: 1, N: 3, B: 3, R: 5, Q: 9, K: 0 };
+
+// 棋子走法规则文本（教学模式用）
+const PIECE_RULES = {
+  K: {
+    name: '王',
+    rule: '每次走1格，可向任意方向移动（横、竖、斜均可）',
+    special: '王车易位：可与未动过的车一起移动\n不能走到被攻击的格子'
+  },
+  Q: {
+    name: '后',
+    rule: '可走任意距离，方向不限（横、竖、斜均可）',
+    special: '棋盘上最强大的棋子，价值9分'
+  },
+  R: {
+    name: '车',
+    rule: '走直线（横或竖），距离不限',
+    special: '价值5分，参与王车易位'
+  },
+  B: {
+    name: '象',
+    rule: '走斜线，距离不限',
+    special: '永远只走一种颜色的格子（亮格象或暗格象）'
+  },
+  N: {
+    name: '马',
+    rule: '走L形：先直走2格再横走1格（或反过来）',
+    special: '唯一能跨越其他棋子的棋子，价值3分'
+  },
+  P: {
+    name: '兵',
+    rule: '向前走1格，第一步可走2格；斜前方有敌子才能吃',
+    special: '走到对方底线可升变为后/车/象/马\n可吃过路兵'
+  }
+};
+
+// ===================== AI Constants =====================
+const PIECE_VALUES = { P: 100, N: 320, B: 330, R: 500, Q: 900, K: 20000 };
+
+// Piece-Square Tables (row 0 = rank 8 / black side, row 7 = rank 1 / white side)
+const PST = {
+  P: [
+    [  0,  0,  0,  0,  0,  0,  0,  0],
+    [ 50, 50, 50, 50, 50, 50, 50, 50],
+    [ 10, 10, 20, 30, 30, 20, 10, 10],
+    [  5,  5, 10, 25, 25, 10,  5,  5],
+    [  0,  0,  0, 20, 20,  0,  0,  0],
+    [  5, -5,-10,  0,  0,-10, -5,  5],
+    [  5, 10, 10,-20,-20, 10, 10,  5],
+    [  0,  0,  0,  0,  0,  0,  0,  0]
+  ],
+  N: [
+    [-50,-40,-30,-30,-30,-30,-40,-50],
+    [-40,-20,  0,  0,  0,  0,-20,-40],
+    [-30,  0, 10, 15, 15, 10,  0,-30],
+    [-30,  5, 15, 20, 20, 15,  5,-30],
+    [-30,  0, 15, 20, 20, 15,  0,-30],
+    [-30,  5, 10, 15, 15, 10,  5,-30],
+    [-40,-20,  0,  5,  5,  0,-20,-40],
+    [-50,-40,-30,-30,-30,-30,-40,-50]
+  ],
+  B: [
+    [-20,-10,-10,-10,-10,-10,-10,-20],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-10,  0,  5, 10, 10,  5,  0,-10],
+    [-10,  5,  5, 10, 10,  5,  5,-10],
+    [-10,  0, 10, 10, 10, 10,  0,-10],
+    [-10, 10, 10, 10, 10, 10, 10,-10],
+    [-10,  5,  0,  0,  0,  0,  5,-10],
+    [-20,-10,-10,-10,-10,-10,-10,-20]
+  ],
+  R: [
+    [  0,  0,  0,  0,  0,  0,  0,  0],
+    [  5, 10, 10, 10, 10, 10, 10,  5],
+    [ -5,  0,  0,  0,  0,  0,  0, -5],
+    [ -5,  0,  0,  0,  0,  0,  0, -5],
+    [ -5,  0,  0,  0,  0,  0,  0, -5],
+    [ -5,  0,  0,  0,  0,  0,  0, -5],
+    [ -5,  0,  0,  0,  0,  0,  0, -5],
+    [  0,  0,  0,  5,  5,  0,  0,  0]
+  ],
+  Q: [
+    [-20,-10,-10, -5, -5,-10,-10,-20],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-10,  0,  5,  5,  5,  5,  0,-10],
+    [ -5,  0,  5,  5,  5,  5,  0, -5],
+    [  0,  0,  5,  5,  5,  5,  0, -5],
+    [-10,  5,  5,  5,  5,  5,  0,-10],
+    [-10,  0,  5,  0,  0,  0,  0,-10],
+    [-20,-10,-10, -5, -5,-10,-10,-20]
+  ],
+  K: [
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-20,-30,-30,-40,-40,-30,-30,-20],
+    [-10,-20,-20,-20,-20,-20,-20,-10],
+    [ 20, 20,  0,  0,  0,  0, 20, 20],
+    [ 20, 30, 10,  0,  0, 10, 30, 20]
+  ]
+};
+
+const DIFFICULTY_CONFIG = {
+  easy:   { depth: 1, randomness: 0.90 },
+  simple: { depth: 2, randomness: 0.50 },
+  normal: { depth: 3, randomness: 0    },
+  hard:   { depth: 4, randomness: 0    },
+  extreme:{ depth: 5, randomness: 0, timeLimit: 2200 }
+};
+
+// ===================== Game State =====================
+let board = [];
+let currentTurn = 'w';
+let selectedSquare = null;
+let validMoves = [];
+let moveHistory = [];
+let capturedByWhite = [];
+let capturedByBlack = [];
+let castlingRights = {};
+let enPassantTarget = null;
+let halfMoveClock = 0;
+let positionStack = [];
+let gameOver = false;
+let pendingPromotion = null;
+
+// Review state
+let reviewMode = false;
+let reviewStates = [];
+let reviewMoves = [];
+let reviewIndex = 0;
+let reviewLiveState = null;
+let reviewAnalyzing = false;
+
+// AI state
+let aiColor = 'b';
+let aiDifficulty = 'easy';
+let isAiThinking = false;
+
+// Teaching mode state
+let teachingMode = true;
+let hintMove = null;
+
+function initBoard() {
+  board = [
+    ['bR','bN','bB','bQ','bK','bB','bN','bR'],
+    ['bP','bP','bP','bP','bP','bP','bP','bP'],
+    [null,null,null,null,null,null,null,null],
+    [null,null,null,null,null,null,null,null],
+    [null,null,null,null,null,null,null,null],
+    [null,null,null,null,null,null,null,null],
+    ['wP','wP','wP','wP','wP','wP','wP','wP'],
+    ['wR','wN','wB','wQ','wK','wB','wN','wR']
+  ];
+  currentTurn = 'w';
+  selectedSquare = null;
+  validMoves = [];
+  moveHistory = [];
+  capturedByWhite = [];
+  capturedByBlack = [];
+  castlingRights = { wK: true, wR_a: true, wR_h: true, bK: true, bR_a: true, bR_h: true };
+  enPassantTarget = null;
+  halfMoveClock = 0;
+  positionStack = [];
+  gameOver = false;
+  pendingPromotion = null;
+  isAiThinking = false;
+}
+
+// ===================== Utilities =====================
+function pieceColor(piece) { return piece ? piece[0] : null; }
+function pieceType(piece) { return piece ? piece[1] : null; }
+function opposite(color) { return color === 'w' ? 'b' : 'w'; }
+function inBounds(r, c) { return r >= 0 && r < 8 && c >= 0 && c < 8; }
+function cloneBoard(b) { return b.map(row => [...row]); }
+
+function copyState(state) {
+  return {
+    board: cloneBoard(state.board), currentTurn: state.currentTurn,
+    moveHistory: state.moveHistory.map(m => ({...m})),
+    capturedByWhite: [...state.capturedByWhite],
+    capturedByBlack: [...state.capturedByBlack],
+    castlingRights: {...state.castlingRights},
+    enPassantTarget: state.enPassantTarget ? {...state.enPassantTarget} : null,
+    halfMoveClock: state.halfMoveClock,
+  };
+}
+
+function cloneState() {
+  return copyState({
+    board: cloneBoard(board), currentTurn,
+    moveHistory: moveHistory.map(m => ({...m})),
+    capturedByWhite: [...capturedByWhite],
+    capturedByBlack: [...capturedByBlack],
+    castlingRights: {...castlingRights},
+    enPassantTarget: enPassantTarget ? {...enPassantTarget} : null,
+    halfMoveClock,
+  });
+}
+function restoreState(state) {
+  board = cloneBoard(state.board);
+  currentTurn = state.currentTurn;
+  moveHistory = state.moveHistory.map(m => ({...m}));
+  capturedByWhite = [...state.capturedByWhite];
+  capturedByBlack = [...state.capturedByBlack];
+  castlingRights = {...state.castlingRights};
+  enPassantTarget = state.enPassantTarget ? {...state.enPassantTarget} : null;
+  halfMoveClock = state.halfMoveClock;
+}
+
+// ===================== Move Generation =====================
+function getPseudoLegalMoves(r, c, b, ep, castling) {
+  const piece = b[r][c];
+  if (!piece) return [];
+  const color = pieceColor(piece);
+  const type = pieceType(piece);
+  const moves = [];
+
+  const addMove = (tr, tc, extra = {}) => {
+    if (!inBounds(tr, tc)) return false;
+    const target = b[tr][tc];
+    if (target && pieceColor(target) === color) return false;
+    moves.push({ fromR: r, fromC: c, toR: tr, toC: tc, capture: !!target, ...extra });
+    return !target;
+  };
+
+  switch (type) {
+    case 'P': {
+      const dir = color === 'w' ? -1 : 1;
+      const startRow = color === 'w' ? 6 : 1;
+      const promoRow = color === 'w' ? 0 : 7;
+      if (inBounds(r + dir, c) && !b[r + dir][c]) {
+        const m = { fromR: r, fromC: c, toR: r + dir, toC: c, capture: false };
+        if (r + dir === promoRow) m.promotion = true;
+        moves.push(m);
+        if (r === startRow && !b[r + 2*dir][c]) {
+          moves.push({ fromR: r, fromC: c, toR: r + 2*dir, toC: c, capture: false, doublePush: true });
+        }
+      }
+      for (const dc of [-1, 1]) {
+        const tr = r + dir, tc = c + dc;
+        if (inBounds(tr, tc)) {
+          const target = b[tr][tc];
+          if (target && pieceColor(target) !== color) {
+            const m = { fromR: r, fromC: c, toR: tr, toC: tc, capture: true };
+            if (tr === promoRow) m.promotion = true;
+            moves.push(m);
+          }
+          if (ep && ep.r === tr && ep.c === tc) {
+            moves.push({ fromR: r, fromC: c, toR: tr, toC: tc, capture: true, enPassant: true });
+          }
+        }
+      }
+      break;
+    }
+    case 'N': {
+      for (const [dr, dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) addMove(r+dr, c+dc);
+      break;
+    }
+    case 'B': case 'R': case 'Q': {
+      let dirs;
+      if (type === 'B') dirs = [[-1,-1],[-1,1],[1,-1],[1,1]];
+      else if (type === 'R') dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+      else dirs = [[-1,-1],[-1,1],[1,-1],[1,1],[-1,0],[1,0],[0,-1],[0,1]];
+      for (const [dr, dc] of dirs) {
+        let tr = r + dr, tc = c + dc;
+        while (inBounds(tr, tc)) { if (!addMove(tr, tc)) break; tr += dr; tc += dc; }
+      }
+      break;
+    }
+    case 'K': {
+      for (let dr = -1; dr <= 1; dr++)
+        for (let dc = -1; dc <= 1; dc++)
+          if (dr || dc) addMove(r + dr, c + dc);
+      // Castling
+      const kingRow = color === 'w' ? 7 : 0;
+      if (r === kingRow && c === 4) {
+        if (castling[color + 'K'] && castling[color + 'R_h']) {
+          if (!b[kingRow][5] && !b[kingRow][6] && b[kingRow][7] === color + 'R') {
+            if (!isSquareAttacked(kingRow, 4, opposite(color), b) &&
+                !isSquareAttacked(kingRow, 5, opposite(color), b) &&
+                !isSquareAttacked(kingRow, 6, opposite(color), b)) {
+              moves.push({ fromR: r, fromC: c, toR: kingRow, toC: 6, capture: false, castle: 'K' });
+            }
+          }
+        }
+        if (castling[color + 'K'] && castling[color + 'R_a']) {
+          if (!b[kingRow][1] && !b[kingRow][2] && !b[kingRow][3] && b[kingRow][0] === color + 'R') {
+            if (!isSquareAttacked(kingRow, 4, opposite(color), b) &&
+                !isSquareAttacked(kingRow, 3, opposite(color), b) &&
+                !isSquareAttacked(kingRow, 2, opposite(color), b)) {
+              moves.push({ fromR: r, fromC: c, toR: kingRow, toC: 2, capture: false, castle: 'Q' });
+            }
+          }
+        }
+      }
+      break;
+    }
+  }
+  return moves;
+}
+
+function getAllPseudoLegalMovesForState(b, color, ep, castling) {
+  const all = [];
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++) {
+      const p = b[r][c];
+      if (p && pieceColor(p) === color) {
+        const ms = getPseudoLegalMoves(r, c, b, ep, castling);
+        for (const m of ms) all.push(m);
+      }
+    }
+  return all;
+}
+
+// ===================== Attack Detection =====================
+function isSquareAttacked(r, c, byColor, b) {
+  const pawnDir = byColor === 'w' ? 1 : -1;
+  for (const dc of [-1, 1]) {
+    const pr = r + pawnDir, pc = c + dc;
+    if (inBounds(pr, pc) && b[pr][pc] === byColor + 'P') return true;
+  }
+  for (const [dr, dc] of [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]) {
+    const nr = r + dr, nc = c + dc;
+    if (inBounds(nr, nc) && b[nr][nc] === byColor + 'N') return true;
+  }
+  for (let dr = -1; dr <= 1; dr++)
+    for (let dc = -1; dc <= 1; dc++)
+      if ((dr || dc) && inBounds(r+dr, c+dc) && b[r+dr][c+dc] === byColor + 'K') return true;
+  for (const [dr, dc] of [[-1,-1],[-1,1],[1,-1],[1,1]]) {
+    let tr = r + dr, tc = c + dc;
+    while (inBounds(tr, tc)) {
+      const p = b[tr][tc];
+      if (p) { if (pieceColor(p) === byColor && (pieceType(p) === 'B' || pieceType(p) === 'Q')) return true; break; }
+      tr += dr; tc += dc;
+    }
+  }
+  for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+    let tr = r + dr, tc = c + dc;
+    while (inBounds(tr, tc)) {
+      const p = b[tr][tc];
+      if (p) { if (pieceColor(p) === byColor && (pieceType(p) === 'R' || pieceType(p) === 'Q')) return true; break; }
+      tr += dr; tc += dc;
+    }
+  }
+  return false;
+}
+
+function findKing(color, b) {
+  const king = color + 'K';
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (b[r][c] === king) return { r, c };
+  return null;
+}
+function isInCheck(color, b) {
+  const k = findKing(color, b);
+  return k ? isSquareAttacked(k.r, k.c, opposite(color), b) : false;
+}
+
+// ===================== Legal Move Filtering =====================
+function isMoveLegal(move, color, b) {
+  const tb = cloneBoard(b);
+  tb[move.toR][move.toC] = tb[move.fromR][move.fromC];
+  tb[move.fromR][move.fromC] = null;
+  if (move.enPassant) tb[move.fromR][move.toC] = null;
+  if (move.castle === 'K') { tb[move.toR][5] = tb[move.toR][7]; tb[move.toR][7] = null; }
+  else if (move.castle === 'Q') { tb[move.toR][3] = tb[move.toR][0]; tb[move.toR][0] = null; }
+  return !isInCheck(color, tb);
+}
+
+function getLegalMoves(r, c) {
+  const piece = board[r][c];
+  if (!piece || pieceColor(piece) !== currentTurn) return [];
+  const pseudo = getPseudoLegalMoves(r, c, board, enPassantTarget, castlingRights);
+  return pseudo.filter(move => isMoveLegal(move, currentTurn, board));
+}
+
+function getAllLegalMoves(color) {
+  const all = [];
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const piece = board[r][c];
+    if (piece && pieceColor(piece) === color) {
+      const pseudo = getPseudoLegalMoves(r, c, board, enPassantTarget, castlingRights);
+      for (const move of pseudo) {
+        if (isMoveLegal(move, color, board)) all.push(move);
+      }
+    }
+  }
+  return all;
+}
+
+// ===================== AI Engine =====================
+function orderMoves(moves, position = board) {
+  moves.sort((a, b) => {
+    const moveScore = m => {
+      let score = m.promotion ? 10000 : 0;
+      if (m.capture) {
+        const victim = position[m.toR] && position[m.toR][m.toC];
+        const attacker = position[m.fromR] && position[m.fromR][m.fromC];
+        score += 5000 + (victim ? PIECE_VALUES[pieceType(victim)] : 100)
+          - (attacker ? PIECE_VALUES[pieceType(attacker)] / 10 : 0);
+      }
+      return score;
+    };
+    return moveScore(b) - moveScore(a);
+  });
+}
+
+function evaluateBoard(b) {
+  let score = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const piece = b[r][c];
+      if (!piece) continue;
+      const color = pieceColor(piece);
+      const type = pieceType(piece);
+      const val = PIECE_VALUES[type];
+      const pst = PST[type];
+      if (color === 'w') {
+        score += val + pst[r][c];
+      } else {
+        score -= val + pst[7 - r][c];
+      }
+    }
+  }
+  return score;
+}
+
+// Make/undo on a board for search (no cloning per move)
+function makeMoveSearch(b, move, ep, castling) {
+  const piece = b[move.fromR][move.fromC];
+  const color = pieceColor(piece);
+  const captured = b[move.toR][move.toC];
+
+  const undo = {
+    fromR: move.fromR, fromC: move.fromC, toR: move.toR, toC: move.toC,
+    piece, captured, enPassant: !!move.enPassant, castle: move.castle || null
+  };
+
+  b[move.toR][move.toC] = piece;
+  b[move.fromR][move.fromC] = null;
+
+  if (move.enPassant) {
+    undo.epCaptured = b[move.fromR][move.toC];
+    b[move.fromR][move.toC] = null;
+  }
+  if (move.promotion) {
+    b[move.toR][move.toC] = color + 'Q';
+  }
+  if (move.castle === 'K') { b[move.toR][5] = b[move.toR][7]; b[move.toR][7] = null; }
+  else if (move.castle === 'Q') { b[move.toR][3] = b[move.toR][0]; b[move.toR][0] = null; }
+
+  const newCastling = { ...castling };
+  if (pieceType(piece) === 'K') { newCastling[color + 'K'] = false; newCastling[color + 'R_a'] = false; newCastling[color + 'R_h'] = false; }
+  if (pieceType(piece) === 'R') {
+    if (move.fromC === 0) newCastling[color + 'R_a'] = false;
+    if (move.fromC === 7) newCastling[color + 'R_h'] = false;
+  }
+  if (captured) {
+    const cc = pieceColor(captured);
+    if (move.toC === 0) newCastling[cc + 'R_a'] = false;
+    if (move.toC === 7) newCastling[cc + 'R_h'] = false;
+  }
+
+  let newEp = null;
+  if (move.doublePush) {
+    const dir = color === 'w' ? -1 : 1;
+    newEp = { r: move.fromR + dir, c: move.fromC };
+  }
+  return { undo, newEp, newCastling };
+}
+
+function undoMoveSearch(b, undo) {
+  b[undo.fromR][undo.fromC] = undo.piece;
+  b[undo.toR][undo.toC] = undo.captured;
+  if (undo.enPassant) b[undo.fromR][undo.toC] = undo.epCaptured;
+  if (undo.castle === 'K') { b[undo.toR][7] = b[undo.toR][5]; b[undo.toR][5] = null; }
+  else if (undo.castle === 'Q') { b[undo.toR][0] = b[undo.toR][3]; b[undo.toR][3] = null; }
+}
+
+let searchDeadline = 0;
+let searchTimedOut = false;
+
+function minimax(b, color, ep, castling, depth, alpha, beta) {
+  if (searchDeadline && Date.now() >= searchDeadline) {
+    searchTimedOut = true;
+    return evaluateBoard(b);
+  }
+  if (depth === 0) return evaluateBoard(b);
+
+  const moves = getAllPseudoLegalMovesForState(b, color, ep, castling);
+  orderMoves(moves, b);
+
+  const maximizing = color === 'w';
+  let hasLegal = false;
+  let best = maximizing ? -Infinity : Infinity;
+
+  for (const move of moves) {
+    const { undo, newEp, newCastling } = makeMoveSearch(b, move, ep, castling);
+    if (isInCheck(color, b)) { undoMoveSearch(b, undo); continue; }
+    hasLegal = true;
+
+    const val = minimax(b, opposite(color), newEp, newCastling, depth - 1, alpha, beta);
+    undoMoveSearch(b, undo);
+    if (searchTimedOut) return evaluateBoard(b);
+
+    if (maximizing) { best = Math.max(best, val); alpha = Math.max(alpha, val); }
+    else { best = Math.min(best, val); beta = Math.min(beta, val); }
+    if (beta <= alpha) break;
+  }
+
+  if (!hasLegal) {
+    if (isInCheck(color, b)) return color === 'w' ? -(100000 + depth) : (100000 + depth);
+    return 0;
+  }
+  return best;
+}
+
+function searchAtDepth(color, depth) {
+  const moves = getAllLegalMoves(color);
+  if (moves.length === 0) return null;
+
+  orderMoves(moves);
+
+  const searchBoard = cloneBoard(board);
+  const searchCastling = { ...castlingRights };
+  const searchEp = enPassantTarget ? { ...enPassantTarget } : null;
+
+  let bestMove = null;
+  let bestEval = color === 'w' ? -Infinity : Infinity;
+  let alpha = -Infinity, beta = Infinity;
+
+  for (const move of moves) {
+    if (searchDeadline && Date.now() >= searchDeadline) { searchTimedOut = true; break; }
+    const { undo, newEp, newCastling } = makeMoveSearch(searchBoard, move, searchEp, searchCastling);
+    const val = minimax(searchBoard, opposite(color), newEp, newCastling, depth - 1, alpha, beta);
+    undoMoveSearch(searchBoard, undo);
+    if (searchTimedOut) break;
+
+    if (color === 'w') {
+      if (val > bestEval) { bestEval = val; bestMove = move; }
+      alpha = Math.max(alpha, bestEval);
+    } else {
+      if (val < bestEval) { bestEval = val; bestMove = move; }
+      beta = Math.min(beta, bestEval);
+    }
+  }
+
+  if (!bestMove) bestMove = moves[0];
+  return { move: bestMove, promotionPiece: bestMove.promotion ? 'Q' : null, evaluation: bestEval, complete: !searchTimedOut };
+}
+
+function findBestMove(color, depth, randomness, timeLimit = 0) {
+  const moves = getAllLegalMoves(color);
+  if (moves.length === 0) return null;
+
+  // Random move for low difficulty
+  if (randomness > 0 && Math.random() < randomness) {
+    const rm = moves[Math.floor(Math.random() * moves.length)];
+    return { move: rm, promotionPiece: rm.promotion ? 'Q' : null };
+  }
+
+  searchDeadline = timeLimit > 0 ? Date.now() + timeLimit : 0;
+  searchTimedOut = false;
+
+  if (!timeLimit) {
+    const result = searchAtDepth(color, depth);
+    searchDeadline = 0;
+    searchTimedOut = false;
+    return result;
+  }
+
+  // Iterative deepening always keeps the last fully completed result.
+  let bestCompleted = null;
+  for (let currentDepth = 1; currentDepth <= depth; currentDepth++) {
+    searchTimedOut = false;
+    const result = searchAtDepth(color, currentDepth);
+    if (!searchTimedOut && result) bestCompleted = result;
+    if (searchTimedOut) break;
+  }
+  searchDeadline = 0;
+  searchTimedOut = false;
+  return bestCompleted || { move: moves[0], promotionPiece: moves[0].promotion ? 'Q' : null };
+}
+
+// ===================== Teaching Helpers =====================
+function evaluateMoveSafety(move) {
+  const piece = board[move.fromR][move.fromC];
+  const myColor = pieceColor(piece);
+  const oppColor = opposite(myColor);
+  const myValue = PIECE_VALUES[pieceType(piece)];
+  const captured = board[move.toR][move.toC];
+  const capturedValue = captured ? PIECE_VALUES[pieceType(captured)] : 0;
+
+  const simBoard = cloneBoard(board);
+  makeMoveSearch(simBoard, move, enPassantTarget ? {...enPassantTarget} : null, {...castlingRights});
+  const attacked = isSquareAttacked(move.toR, move.toC, oppColor, simBoard);
+
+  if (!attacked) return 'safe';
+  if (myValue > capturedValue) return 'risk';
+  return 'trade';
+}
+
+function showHint() {
+  if (gameOver || isAiThinking || currentTurn === aiColor) return;
+  const result = findBestMove(currentTurn, 3, 0);
+  if (result && result.move) {
+    hintMove = { fromR: result.move.fromR, fromC: result.move.fromC, toR: result.move.toR, toC: result.move.toC };
+    renderBoard();
+    updateTeachTip('提示：试试这步走法（蓝色高亮）');
+    setTimeout(() => { hintMove = null; renderBoard(); }, 6000);
+  }
+}
+
+function isPieceAttacked(r, c) {
+  const piece = board[r][c];
+  if (!piece) return false;
+  const myColor = pieceColor(piece);
+  if (myColor !== opposite(aiColor)) return false; // 只提示玩家被攻击的棋子
+  return isSquareAttacked(r, c, opposite(myColor), board);
+}
+
+function updateTeachTip(text) {
+  const el = document.getElementById('teachTip');
+  if (el) el.textContent = text;
+}
+
+// 获取棋子的理论走法范围（教学模式显示用，不考虑王安全，排除王车易位）
+function getTheoreticalMoves(r, c) {
+  const piece = board[r][c];
+  if (!piece) return [];
+  const moves = getPseudoLegalMoves(r, c, board, enPassantTarget, castlingRights);
+  return moves.filter(m => !m.castle);
+}
+
+// 更新棋子规则卡显示
+function updatePieceRuleCard(piece) {
+  const card = document.getElementById('pieceRuleCard');
+  if (!piece || !teachingMode) {
+    card.classList.remove('active');
+    return;
+  }
+  const type = pieceType(piece);
+  const rule = PIECE_RULES[type];
+  if (!rule) {
+    card.classList.remove('active');
+    return;
+  }
+  const color = pieceColor(piece);
+  document.getElementById('prcSymbol').className = 'prc-symbol ' + (color === 'w' ? 'white' : 'black');
+  document.getElementById('prcSymbol').textContent = PIECES[piece];
+  document.getElementById('prcName').textContent = rule.name + '（' + (color === 'w' ? '白方' : '黑方') + '）';
+  document.getElementById('prcRule').textContent = rule.rule;
+  document.getElementById('prcSpecial').innerHTML = rule.special.replace(/\n/g, '<br>');
+  card.classList.add('active');
+}
+
+// ===================== Tutorial System =====================
+const TUTORIAL_LESSONS = [
+  {
+    id: 0,
+    title: '认识棋子',
+    description: '点击棋盘上的每个棋子，了解它的走法',
+    tip: '淡蓝色 = 理论走法范围，上方规则卡显示走法说明',
+    board: () => {
+      const b = Array(8).fill(null).map(() => Array(8).fill(null));
+      b[7][0] = 'wR'; b[7][1] = 'wN'; b[7][2] = 'wB';
+      b[7][3] = 'wQ'; b[7][4] = 'wK'; b[6][0] = 'wP';
+      return b;
+    },
+    turn: 'w',
+    freePractice: true,
+    goalType: 'clickAll',
+    goalData: { types: ['R','N','B','Q','K','P'] },
+    successMsg: '你已了解所有棋子的走法！'
+  },
+  {
+    id: 1,
+    title: '走法练习',
+    description: '将每个棋子至少走一步',
+    tip: '选中棋子后点击绿色圆点处即可走子',
+    board: () => {
+      const b = Array(8).fill(null).map(() => Array(8).fill(null));
+      b[7][0] = 'wR'; b[7][1] = 'wN'; b[7][2] = 'wB';
+      b[7][3] = 'wQ'; b[7][4] = 'wK'; b[6][0] = 'wP';
+      return b;
+    },
+    turn: 'w',
+    freePractice: true,
+    goalType: 'moveAll',
+    goalData: { types: ['R','N','B','Q','K','P'] },
+    successMsg: '你已经会走每个棋子了！'
+  },
+  {
+    id: 2,
+    title: '吃子练习',
+    description: '用你的棋子吃掉所有6个黑方棋子',
+    tip: '每个棋子吃法不同：兵斜吃、马跳吃、车直线吃',
+    board: () => {
+      const b = Array(8).fill(null).map(() => Array(8).fill(null));
+      b[7][0] = 'wR'; b[7][1] = 'wN'; b[7][2] = 'wB';
+      b[7][3] = 'wQ'; b[7][4] = 'wK'; b[6][0] = 'wP';
+      b[4][0] = 'bP'; b[5][2] = 'bP'; b[4][5] = 'bP';
+      b[3][3] = 'bP'; b[5][1] = 'bP'; b[6][5] = 'bP';
+      return b;
+    },
+    turn: 'w',
+    goalType: 'captureAll',
+    goalData: { count: 6 },
+    successMsg: '吃子练习完成！你掌握了每种棋子的吃法'
+  },
+  {
+    id: 3,
+    title: '将军与将杀',
+    description: '找到一步将杀黑王的方法',
+    tip: '将杀 = 对方王被攻击且无路可逃。提示：后从右下角斜线攻击',
+    board: () => {
+      const b = Array(8).fill(null).map(() => Array(8).fill(null));
+      b[0][0] = 'bK'; b[1][2] = 'wK'; b[7][7] = 'wQ';
+      return b;
+    },
+    turn: 'w',
+    goalType: 'checkmate',
+    goalData: {},
+    successMsg: '将杀！对方无处可逃，你赢了！'
+  },
+  {
+    id: 4,
+    title: '王车易位',
+    description: '将王向右走两格（触发王车易位）',
+    tip: '王从e1走到g1，车会自动跳到f1',
+    board: () => {
+      const b = Array(8).fill(null).map(() => Array(8).fill(null));
+      b[7][4] = 'wK'; b[7][7] = 'wR'; b[0][4] = 'bK';
+      return b;
+    },
+    turn: 'w',
+    goalType: 'castle',
+    goalData: {},
+    successMsg: '王车易位完成！王安全了，车也出来了'
+  }
+];
+
+// 毕业考试：底线将杀谜题
+// 黑王在a8，被自己的兵（a7、b7）挡住退路
+// 白后从d1走到d8，沿底线将杀，王无处可逃
+const GRADUATION_LESSON = {
+  id: 'grad',
+  title: '毕业考试',
+  description: '找到一步将杀黑王的方法',
+  tip: '黑王被自己的兵挡住了退路。想一想，怎么让后到达底线（第8行）？',
+  board: () => {
+    const b = Array(8).fill(null).map(() => Array(8).fill(null));
+    b[0][0] = 'bK'; b[1][0] = 'bP'; b[1][1] = 'bP';
+    b[7][3] = 'wQ'; b[7][4] = 'wK';
+    return b;
+  },
+  turn: 'w',
+  goalType: 'checkmate',
+  goalData: {},
+  successMsg: '毕业了！你已掌握国际象棋基础，去实战中展示棋艺吧！'
+};
+
+let tutorialMode = false;
+let graduationMode = false;
+let currentLesson = null;
+let lessonState = {};
+let tutorialProgress = [false, false, false, false, false];
+let lessonResetTimer = null;
+
+function getCurrentLesson() {
+  return graduationMode ? GRADUATION_LESSON : TUTORIAL_LESSONS[currentLesson];
+}
+
+function isFreePracticeLesson() {
+  if (!tutorialMode || graduationMode || currentLesson === null) return false;
+  return TUTORIAL_LESSONS[currentLesson].freePractice === true;
+}
+
+function startLesson(idx) {
+  if (lessonResetTimer) { clearTimeout(lessonResetTimer); lessonResetTimer = null; }
+  tutorialMode = true;
+  currentLesson = idx;
+  const lesson = TUTORIAL_LESSONS[idx];
+
+  board = lesson.board();
+  currentTurn = lesson.turn;
+  selectedSquare = null;
+  validMoves = [];
+  moveHistory = [];
+  capturedByWhite = [];
+  capturedByBlack = [];
+  castlingRights = { wK: true, wR_a: true, wR_h: true, bK: true, bR_a: true, bR_h: true };
+  enPassantTarget = null;
+  halfMoveClock = 0;
+  positionStack = [];
+  gameOver = false;
+  pendingPromotion = null;
+  isAiThinking = false;
+  hintMove = null;
+
+  lessonState = {};
+  if (lesson.goalType === 'clickAll') lessonState.clicked = new Set();
+
+  document.getElementById('tutorialModal').classList.remove('active');
+  document.getElementById('lessonBar').classList.add('active');
+  document.getElementById('lessonTitle').textContent = `第${idx+1}课 · ${lesson.title}`;
+  document.getElementById('lessonDesc').textContent = lesson.description;
+  document.getElementById('lessonNextBtn').style.display = 'none';
+
+  // 教程中强制开启教学模式
+  teachingMode = true;
+  document.getElementById('teachMode').checked = true;
+  document.getElementById('teachTip').style.display = 'flex';
+
+  renderBoard();
+  updatePieceRuleCard(null);
+  updateTeachTip(lesson.tip);
+  updateLessonProgress();
+}
+
+function exitTutorial() {
+  if (lessonResetTimer) { clearTimeout(lessonResetTimer); lessonResetTimer = null; }
+  tutorialMode = false;
+  graduationMode = false;
+  currentLesson = null;
+  lessonState = {};
+  document.getElementById('lessonBar').classList.remove('active');
+  document.getElementById('lessonNextBtn').style.display = 'none';
+  newGame();
+}
+
+function startGraduation() {
+  if (lessonResetTimer) { clearTimeout(lessonResetTimer); lessonResetTimer = null; }
+  tutorialMode = true;
+  graduationMode = true;
+  currentLesson = null;
+  const lesson = GRADUATION_LESSON;
+
+  board = lesson.board();
+  currentTurn = lesson.turn;
+  selectedSquare = null;
+  validMoves = [];
+  moveHistory = [];
+  capturedByWhite = [];
+  capturedByBlack = [];
+  castlingRights = { wK: true, wR_a: true, wR_h: true, bK: true, bR_a: true, bR_h: true };
+  enPassantTarget = null;
+  halfMoveClock = 0;
+  positionStack = [];
+  gameOver = false;
+  pendingPromotion = null;
+  isAiThinking = false;
+  hintMove = null;
+
+  lessonState = {};
+
+  document.getElementById('tutorialModal').classList.remove('active');
+  document.getElementById('lessonBar').classList.add('active');
+  document.getElementById('lessonTitle').textContent = '🎓 ' + lesson.title;
+  document.getElementById('lessonDesc').textContent = lesson.description;
+  document.getElementById('lessonNextBtn').style.display = 'none';
+
+  teachingMode = true;
+  document.getElementById('teachMode').checked = true;
+  document.getElementById('teachTip').style.display = 'flex';
+
+  renderBoard();
+  updatePieceRuleCard(null);
+  updateTeachTip(lesson.tip);
+  document.getElementById('lessonProgress').textContent = '';
+}
+
+function resetLesson() {
+  lessonResetTimer = null;
+  if (graduationMode) startGraduation();
+  else if (currentLesson !== null) startLesson(currentLesson);
+}
+
+function checkLessonGoal(move) {
+  if (!tutorialMode || (currentLesson === null && !graduationMode)) return;
+  const lesson = getCurrentLesson();
+
+  switch (lesson.goalType) {
+    case 'clickAll': {
+      const allClicked = lesson.goalData.types.every(t => lessonState.clicked.has(t));
+      if (allClicked) showLessonSuccess();
+      else updateLessonProgress();
+      break;
+    }
+    case 'moveAll': {
+      const movedTypes = new Set();
+      for (const m of moveHistory) movedTypes.add(pieceType(m.piece));
+      const allMoved = lesson.goalData.types.every(t => movedTypes.has(t));
+      if (allMoved) showLessonSuccess();
+      else updateLessonProgress();
+      break;
+    }
+    case 'captureAll': {
+      let blackCount = 0;
+      for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++)
+        if (board[r][c] && pieceColor(board[r][c]) === 'b') blackCount++;
+      if (blackCount === 0) showLessonSuccess();
+      else updateLessonProgress();
+      break;
+    }
+    case 'checkmate': {
+      if (gameOver) showLessonSuccess();
+      else {
+        updateTeachTip('这不是将杀，对方还能逃。再试试！');
+        if (!lessonResetTimer) lessonResetTimer = setTimeout(resetLesson, 1500);
+      }
+      break;
+    }
+    case 'castle': {
+      if (move && move.castle) showLessonSuccess();
+      else {
+        updateTeachTip('这步不是王车易位。把王向右走两格试试');
+        if (!lessonResetTimer) lessonResetTimer = setTimeout(resetLesson, 1500);
+      }
+      break;
+    }
+  }
+}
+
+function showLessonSuccess() {
+  if (lessonResetTimer) { clearTimeout(lessonResetTimer); lessonResetTimer = null; }
+  const lesson = getCurrentLesson();
+  if (graduationMode) {
+    updateTeachTip('🎓 ' + lesson.successMsg);
+    document.getElementById('lessonProgress').textContent = '✅ 毕业通过！';
+    const nextBtn = document.getElementById('lessonNextBtn');
+    nextBtn.textContent = '完成 🎓';
+    nextBtn.style.display = 'block';
+  } else {
+    tutorialProgress[currentLesson] = true;
+    saveTutorialProgress();
+    updateTeachTip('✅ ' + lesson.successMsg);
+    document.getElementById('lessonProgress').textContent = '✅ 完成！';
+    const nextBtn = document.getElementById('lessonNextBtn');
+    if (currentLesson < TUTORIAL_LESSONS.length - 1) {
+      nextBtn.textContent = '下一课 →';
+    } else {
+      nextBtn.textContent = '完成全部教程 🎓';
+    }
+    nextBtn.style.display = 'block';
+  }
+}
+
+function updateLessonProgress() {
+  const el = document.getElementById('lessonProgress');
+  if (!el || (currentLesson === null && !graduationMode)) return;
+  const lesson = getCurrentLesson();
+  switch (lesson.goalType) {
+    case 'clickAll':
+      el.textContent = `已查看 ${lessonState.clicked.size}/${lesson.goalData.types.length} 种棋子`;
+      break;
+    case 'moveAll': {
+      const movedTypes = new Set();
+      for (const m of moveHistory) movedTypes.add(pieceType(m.piece));
+      el.textContent = `已移动 ${movedTypes.size}/${lesson.goalData.types.length} 种棋子`;
+      break;
+    }
+    case 'captureAll': {
+      let blackCount = 0;
+      for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++)
+        if (board[r][c] && pieceColor(board[r][c]) === 'b') blackCount++;
+      el.textContent = `剩余黑棋：${blackCount}/${lesson.goalData.count}`;
+      break;
+    }
+    default:
+      el.textContent = '';
+  }
+}
+
+function renderTutorialModal() {
+  const list = document.getElementById('lessonList');
+  list.innerHTML = '';
+  TUTORIAL_LESSONS.forEach((lesson, idx) => {
+    const completed = tutorialProgress[idx];
+    const item = document.createElement('div');
+    item.className = 'lesson-list-item' + (completed ? ' completed' : '');
+    item.innerHTML = `
+      <span class="lli-num">${idx + 1}</span>
+      <div style="flex:1;">
+        <div class="lli-title">${lesson.title}</div>
+        <div class="lli-desc">${lesson.description}</div>
+      </div>
+      <span class="lli-status">${completed ? '✅' : '▶'}</span>
+    `;
+    item.addEventListener('click', () => startLesson(idx));
+    list.appendChild(item);
+  });
+
+  // 毕业考试入口（全部课程完成后显示）
+  const allDone = tutorialProgress.every(v => v);
+  const gradEl = document.getElementById('graduationEntry');
+  if (gradEl) gradEl.style.display = allDone ? 'flex' : 'none';
+}
+
+function saveTutorialProgress() {
+  try { localStorage.setItem('chess_tutorial_progress', JSON.stringify(tutorialProgress)); } catch(e) {}
+}
+function loadTutorialProgress() {
+  try {
+    const saved = localStorage.getItem('chess_tutorial_progress');
+    if (saved) tutorialProgress = JSON.parse(saved);
+  } catch(e) {}
+}
+
+// ===================== Move Execution =====================
+function makeMove(move, promotionPiece) {
+  positionStack.push(cloneState());
+
+  const piece = board[move.fromR][move.fromC];
+  const color = pieceColor(piece);
+  const captured = board[move.toR][move.toC];
+
+  const rec = {
+    piece, color, fromR: move.fromR, fromC: move.fromC, toR: move.toR, toC: move.toC,
+    captured: captured || null, castle: move.castle || null, enPassant: move.enPassant || false,
+    promotion: promotionPiece || null, notation: ''
+  };
+
+  board[move.toR][move.toC] = piece;
+  board[move.fromR][move.fromC] = null;
+
+  if (move.enPassant) { rec.captured = board[move.fromR][move.toC]; board[move.fromR][move.toC] = null; }
+  if (promotionPiece) { board[move.toR][move.toC] = color + promotionPiece; }
+  if (move.castle === 'K') { board[move.toR][5] = board[move.toR][7]; board[move.toR][7] = null; }
+  else if (move.castle === 'Q') { board[move.toR][3] = board[move.toR][0]; board[move.toR][0] = null; }
+
+  if (rec.captured) {
+    if (color === 'w') capturedByWhite.push(rec.captured);
+    else capturedByBlack.push(rec.captured);
+  }
+
+  if (pieceType(piece) === 'K') { castlingRights[color + 'K'] = false; castlingRights[color + 'R_a'] = false; castlingRights[color + 'R_h'] = false; }
+  if (pieceType(piece) === 'R') {
+    if (move.fromC === 0) castlingRights[color + 'R_a'] = false;
+    if (move.fromC === 7) castlingRights[color + 'R_h'] = false;
+  }
+  if (captured) {
+    const cc = pieceColor(captured);
+    if (move.toC === 0) castlingRights[cc + 'R_a'] = false;
+    if (move.toC === 7) castlingRights[cc + 'R_h'] = false;
+  }
+
+  enPassantTarget = move.doublePush ? { r: move.fromR + (color === 'w' ? -1 : 1), c: move.fromC } : null;
+  halfMoveClock = (pieceType(piece) === 'P' || captured) ? 0 : halfMoveClock + 1;
+  currentTurn = opposite(currentTurn);
+
+  // 前两课是自由练习：棋盘上没有黑方棋子，不应按正式对局判定逼和并锁住棋盘。
+  const checkGameEnding = !isFreePracticeLesson();
+  const oppInCheck = checkGameEnding && isInCheck(currentTurn, board);
+  const oppMoves = checkGameEnding ? getAllLegalMoves(currentTurn) : [];
+  const isMate = checkGameEnding && oppInCheck && oppMoves.length === 0;
+  const isStalemate = checkGameEnding && !oppInCheck && oppMoves.length === 0;
+
+  rec.notation = generateNotation(rec);
+
+  moveHistory.push(rec);
+
+  if (isMate) {
+    gameOver = true;
+    rec.notation += '#';
+    const winMsg = color === aiColor ? 'AI 获胜' : '你赢了！';
+    setTimeout(() => showGameOver(winMsg, '将杀'), 500);
+  } else if (isStalemate) {
+    gameOver = true;
+    setTimeout(() => showGameOver('和棋', '逼和（无子可走）'), 500);
+  } else if (checkGameEnding && halfMoveClock >= 100) {
+    gameOver = true;
+    setTimeout(() => showGameOver('和棋', '50步规则'), 500);
+  } else if (oppInCheck) {
+    rec.notation += '+';
+  }
+}
+
+function generateNotation(rec) {
+  if (rec.castle === 'K') return 'O-O';
+  if (rec.castle === 'Q') return 'O-O-O';
+  const type = pieceType(rec.piece);
+  const fromFile = FILES[rec.fromC];
+  const toSq = FILES[rec.toC] + (8 - rec.toR);
+  let n = '';
+  if (type !== 'P') n += type;
+  if (rec.captured) { if (type === 'P') n += fromFile; n += 'x'; }
+  n += toSq;
+  if (rec.promotion) n += '=' + rec.promotion;
+  return n;
+}
+
+// ===================== Rendering =====================
+function renderBoard() {
+  const boardEl = document.getElementById('board');
+  boardEl.innerHTML = '';
+
+  let checkedKing = null;
+  if (isInCheck(currentTurn, board)) checkedKing = findKing(currentTurn, board);
+
+  let lastMove = null;
+  if (moveHistory.length > 0) {
+    const lm = moveHistory[moveHistory.length - 1];
+    lastMove = { fromR: lm.fromR, fromC: lm.fromC, toR: lm.toR, toC: lm.toC };
+  }
+
+  const flipped = aiColor === 'w'; // player is black → flip board
+
+  // 教学模式下，计算选中棋子的理论走法范围
+  const theoreticalMoves = (teachingMode && selectedSquare) ? getTheoreticalMoves(selectedSquare.r, selectedSquare.c) : [];
+
+  for (let i = 0; i < 8; i++) {
+    for (let j = 0; j < 8; j++) {
+      const r = flipped ? 7 - i : i;
+      const c = flipped ? 7 - j : j;
+      const square = document.createElement('div');
+      const isLight = (r + c) % 2 === 0;
+      square.className = 'square ' + (isLight ? 'light' : 'dark');
+      square.dataset.r = r;
+      square.dataset.c = c;
+
+      if (j === 0) {
+        const lbl = document.createElement('span');
+        lbl.className = 'coord-label coord-rank';
+        lbl.textContent = 8 - r;
+        square.appendChild(lbl);
+      }
+      if (i === 7) {
+        const lbl = document.createElement('span');
+        lbl.className = 'coord-label coord-file';
+        lbl.textContent = FILES[c];
+        square.appendChild(lbl);
+      }
+
+      const piece = board[r][c];
+      if (piece) {
+        const el = document.createElement('span');
+        el.className = 'piece ' + (pieceColor(piece) === 'w' ? 'white' : 'black');
+        el.textContent = PIECES[piece];
+        square.appendChild(el);
+      }
+
+      if (selectedSquare && selectedSquare.r === r && selectedSquare.c === c) square.classList.add('selected');
+      if (lastMove && ((lastMove.fromR === r && lastMove.fromC === c) || (lastMove.toR === r && lastMove.toC === c))) square.classList.add('last-move');
+
+      // 教学模式下显示理论走法范围（淡蓝色背景，不包括选中格本身）
+      if (theoreticalMoves.length > 0 && !(selectedSquare.r === r && selectedSquare.c === c) && theoreticalMoves.some(m => m.toR === r && m.toC === c)) {
+        square.classList.add('theoretical');
+      }
+
+      const vm = validMoves.find(m => m.toR === r && m.toC === c);
+      if (vm) {
+        if (vm.capture || vm.enPassant) {
+          square.classList.add('valid-capture');
+        } else if (teachingMode) {
+          const safety = evaluateMoveSafety(vm);
+          square.classList.add(safety === 'risk' ? 'move-risk' : safety === 'trade' ? 'move-trade' : 'valid-move');
+        } else {
+          square.classList.add('valid-move');
+        }
+      }
+      if (teachingMode && !selectedSquare && piece && isPieceAttacked(r, c)) square.classList.add('attacked');
+      if (hintMove && hintMove.fromR === r && hintMove.fromC === c) square.classList.add('hint-from');
+      if (hintMove && hintMove.toR === r && hintMove.toC === c) square.classList.add('hint-to');
+      if (checkedKing && checkedKing.r === r && checkedKing.c === c) square.classList.add('in-check');
+
+      square.addEventListener('click', () => handleSquareClick(r, c));
+      boardEl.appendChild(square);
+    }
+  }
+  updateUI();
+}
+
+function handleSquareClick(r, c) {
+  if (reviewMode || gameOver || pendingPromotion || isAiThinking) return;
+  if (currentTurn === aiColor) return;
+
+  const piece = board[r][c];
+
+  if (selectedSquare) {
+    const move = validMoves.find(m => m.toR === r && m.toC === c);
+    if (move) {
+      if (move.promotion) {
+        pendingPromotion = move;
+        showPromotionDialog(currentTurn);
+        return;
+      }
+      makeMove(move);
+      selectedSquare = null;
+      validMoves = [];
+      updatePieceRuleCard(null);
+      if (tutorialMode) {
+        currentTurn = getCurrentLesson().turn;
+        renderBoard();
+        checkLessonGoal(move);
+      } else {
+        renderBoard();
+        maybeTriggerAI();
+      }
+      return;
+    }
+    // 教学模式下，点击对方棋子可查看其走法（仅供学习，不能移动）
+    if (teachingMode && piece && pieceColor(piece) !== currentTurn) {
+      selectedSquare = { r, c };
+      validMoves = [];
+      renderBoard();
+      updatePieceRuleCard(piece);
+      const pName = PIECE_NAMES[pieceType(piece)];
+      updateTeachTip(`查看对方${pName}的走法（淡蓝色为理论范围）`);
+      return;
+    }
+    if (piece && pieceColor(piece) === currentTurn) {
+      selectedSquare = { r, c };
+      validMoves = getLegalMoves(r, c);
+      renderBoard();
+      updatePieceRuleCard(piece);
+      if (tutorialMode && getCurrentLesson().goalType === 'clickAll') {
+        lessonState.clicked.add(pieceType(piece));
+        checkLessonGoal();
+      }
+      if (teachingMode) {
+        if (validMoves.length === 0) {
+          updateTeachTip('这枚棋子目前无路可走，试试其他棋子');
+        } else {
+          const risks = validMoves.filter(m => evaluateMoveSafety(m) === 'risk').length;
+          const trades = validMoves.filter(m => evaluateMoveSafety(m) === 'trade').length;
+          const safe = validMoves.length - risks - trades;
+          const pName = PIECE_NAMES[pieceType(piece)];
+          let tip = `已选中${pName}，共${validMoves.length}种走法`;
+          if (risks > 0) tip += `，其中${risks}步会丢子（红点），请避开`;
+          else if (trades > 0) tip += `，${safe}步安全（绿），${trades}步会交换（黄）`;
+          else tip += `，全部安全（绿点）`;
+          updateTeachTip(tip);
+        }
+      }
+      return;
+    }
+    selectedSquare = null;
+    validMoves = [];
+    updatePieceRuleCard(null);
+    renderBoard();
+    if (teachingMode) updateTeachTip('点击你的棋子，查看安全走法（绿=安全，黄=交换，红=会丢子）');
+    return;
+  }
+
+  if (piece) {
+    // 教学模式下，点击任意棋子（包括对方）查看其走法规则
+    if (teachingMode) {
+      const isMine = pieceColor(piece) === currentTurn;
+      selectedSquare = { r, c };
+      validMoves = isMine ? getLegalMoves(r, c) : [];
+      renderBoard();
+      updatePieceRuleCard(piece);
+      if (isMine && tutorialMode && getCurrentLesson().goalType === 'clickAll') {
+        lessonState.clicked.add(pieceType(piece));
+        checkLessonGoal();
+      }
+      if (isMine) {
+        if (validMoves.length === 0) {
+          updateTeachTip('这枚棋子目前无路可走，试试其他棋子');
+        } else {
+          const risks = validMoves.filter(m => evaluateMoveSafety(m) === 'risk').length;
+          const trades = validMoves.filter(m => evaluateMoveSafety(m) === 'trade').length;
+          const safe = validMoves.length - risks - trades;
+          const pName = PIECE_NAMES[pieceType(piece)];
+          let tip = `已选中${pName}，共${validMoves.length}种走法`;
+          if (risks > 0) tip += `，其中${risks}步会丢子（红点），请避开`;
+          else if (trades > 0) tip += `，${safe}步安全（绿），${trades}步会交换（黄）`;
+          else tip += `，全部安全（绿点）`;
+          updateTeachTip(tip);
+        }
+      } else {
+        const pName = PIECE_NAMES[pieceType(piece)];
+        updateTeachTip(`查看对方${pName}的走法（淡蓝色为理论范围）`);
+      }
+      return;
+    }
+    // 非教学模式只允许选自己的棋子
+    if (pieceColor(piece) === currentTurn) {
+      selectedSquare = { r, c };
+      validMoves = getLegalMoves(r, c);
+      renderBoard();
+    }
+  }
+}
+
+function showPromotionDialog(color) {
+  const modal = document.getElementById('promoModal');
+  const choices = document.getElementById('promoChoices');
+  choices.innerHTML = '';
+  ['Q', 'R', 'B', 'N'].forEach(p => {
+    const choice = document.createElement('div');
+    choice.className = 'promo-choice';
+    const span = document.createElement('span');
+    span.className = 'piece ' + (color === 'w' ? 'white' : 'black');
+    span.textContent = PIECES[color + p];
+    choice.appendChild(span);
+    choice.addEventListener('click', () => {
+      modal.classList.remove('active');
+      const move = pendingPromotion;
+      makeMove(move, p);
+      pendingPromotion = null;
+      selectedSquare = null;
+      validMoves = [];
+      updatePieceRuleCard(null);
+      if (tutorialMode) {
+        currentTurn = getCurrentLesson().turn;
+        renderBoard();
+        checkLessonGoal(move);
+      } else {
+        renderBoard();
+        maybeTriggerAI();
+      }
+    });
+    choices.appendChild(choice);
+  });
+  modal.classList.add('active');
+}
+
+function updateUI() {
+  const turnDot = document.getElementById('turnDot');
+  const turnText = document.getElementById('turnText');
+  const statusText = document.getElementById('statusText');
+  const aiThinkingEl = document.getElementById('aiThinking');
+
+  turnDot.className = 'turn-dot ' + (currentTurn === 'w' ? 'white' : 'black');
+
+  if (isAiThinking) {
+    turnText.textContent = '';
+    aiThinkingEl.style.display = 'flex';
+    statusText.textContent = '';
+  } else {
+    aiThinkingEl.style.display = 'none';
+    turnText.textContent = currentTurn === aiColor ? 'AI行棋' : '你的回合';
+    const inCheck = !gameOver && isInCheck(currentTurn, board);
+    statusText.textContent = inCheck ? '将军！' : '';
+    if (teachingMode) {
+      if (inCheck && currentTurn !== aiColor) {
+        updateTeachTip('你的王被将军了！必须应将——移动王、挡住或吃掉将军的棋子');
+      } else if (!inCheck && currentTurn !== aiColor && !selectedSquare) {
+        const tipEl = document.getElementById('teachTip');
+        if (tipEl && !hintMove) updateTeachTip('轮到你了——点击棋子查看安全走法，或点"提示"求助');
+      }
+    }
+  }
+
+  // Captured
+  const wc = document.getElementById('whiteCaptured');
+  const bc = document.getElementById('blackCaptured');
+  wc.innerHTML = capturedByWhite.length === 0 ? '<span class="empty-hint">暂无</span>'
+    : capturedByWhite.map(p => `<span class="piece black">${PIECES[p]}</span>`).join('');
+  bc.innerHTML = capturedByBlack.length === 0 ? '<span class="empty-hint">暂无</span>'
+    : capturedByBlack.map(p => `<span class="piece white">${PIECES[p]}</span>`).join('');
+
+  // Material balance bar
+  let whiteGain = 0, blackGain = 0;
+  for (const p of capturedByWhite) whiteGain += PIECE_DISPLAY_VALUES[pieceType(p)];
+  for (const p of capturedByBlack) blackGain += PIECE_DISPLAY_VALUES[pieceType(p)];
+  const balance = whiteGain - blackGain;
+  const matPct = Math.min(Math.abs(balance) / 15 * 50, 50);
+  const barW = document.getElementById('matBarW');
+  const barB = document.getElementById('matBarB');
+  const matScoreEl = document.getElementById('matScore');
+  if (barW && barB && matScoreEl) {
+    barW.style.width = (balance > 0 ? matPct : 0) + '%';
+    barB.style.width = (balance < 0 ? matPct : 0) + '%';
+    matScoreEl.textContent = balance > 0 ? '+' + balance : String(balance);
+    matScoreEl.className = 'material-score ' + (balance > 0 ? 'white-adv' : balance < 0 ? 'black-adv' : 'even');
+  }
+
+  // Move list
+  const ml = document.getElementById('moveList');
+  ml.innerHTML = '';
+  if (moveHistory.length === 0) {
+    ml.innerHTML = '<div style="color:#666;font-size:13px;">尚无行棋记录</div>';
+  } else {
+    for (let i = 0; i < moveHistory.length; i += 2) {
+      const e = document.createElement('div');
+      e.className = 'move-entry';
+      const num = Math.floor(i / 2) + 1;
+      const w = moveHistory[i], b = moveHistory[i + 1];
+      e.innerHTML = `<span class="move-num">${num}.</span><span class="move-white">${w ? w.notation : ''}</span><span class="move-black">${b ? b.notation : ''}</span>`;
+      ml.appendChild(e);
+    }
+    ml.scrollTop = ml.scrollHeight;
+  }
+
+  document.getElementById('undoBtn').disabled = positionStack.length === 0 || isAiThinking || tutorialMode;
+  document.getElementById('hintBtn').disabled = gameOver || isAiThinking || currentTurn === aiColor || !teachingMode || tutorialMode;
+  document.getElementById('reviewBtn').disabled = moveHistory.length === 0 || isAiThinking || tutorialMode || reviewMode;
+  document.getElementById('newGameBtn').disabled = reviewMode;
+  document.getElementById('tutorialBtn').disabled = reviewMode;
+}
+
+function showGameOver(title, msg) {
+  if (tutorialMode) return; // 教程模式不弹出对局结束窗口
+  document.getElementById('gameOverTitle').textContent = title;
+  document.getElementById('gameOverMsg').textContent = msg;
+  document.getElementById('gameOverModal').classList.add('active');
+}
+
+// ===================== Lightweight Offline Review =====================
+function formatMove(move) {
+  if (!move) return '—';
+  if (move.castle === 'K') return 'O-O';
+  if (move.castle === 'Q') return 'O-O-O';
+  return `${FILES[move.fromC]}${8 - move.fromR} → ${FILES[move.toC]}${8 - move.toR}`;
+}
+
+function sameMove(a, b) {
+  return !!a && !!b && a.fromR === b.fromR && a.fromC === b.fromC
+    && a.toR === b.toR && a.toC === b.toC;
+}
+
+function positionSummary(score) {
+  const pawns = Math.abs(score / 100);
+  if (pawns < 0.35) return '局面大致均衡';
+  const side = score > 0 ? '白方' : '黑方';
+  if (pawns < 1.2) return `${side}略优`;
+  if (pawns < 3) return `${side}明显占优`;
+  return `${side}优势很大`;
+}
+
+function scoreAfterMove(move) {
+  const testBoard = cloneBoard(board);
+  makeMoveSearch(testBoard, move, enPassantTarget ? {...enPassantTarget} : null, {...castlingRights});
+  return evaluateBoard(testBoard);
+}
+
+function updateReviewPosition(message) {
+  restoreState(reviewStates[reviewIndex]);
+  gameOver = true;
+  selectedSquare = null;
+  validMoves = [];
+  hintMove = null;
+  renderBoard();
+
+  const total = reviewStates.length - 1;
+  document.getElementById('reviewProgress').textContent = ` · ${reviewIndex}/${total} 步`;
+  document.getElementById('reviewPrevBtn').disabled = reviewIndex === 0 || reviewAnalyzing;
+  document.getElementById('reviewNextBtn').disabled = reviewIndex === total || reviewAnalyzing;
+  document.getElementById('reviewAnalyzeBtn').disabled = reviewAnalyzing;
+  document.getElementById('reviewResult').textContent = message ||
+    (reviewIndex < total ? '当前是下一步行棋前的局面，可分析实战走法。' : '已到达本局最后局面，可查看推荐走法。');
+}
+
+function startReview() {
+  if (tutorialMode || isAiThinking || moveHistory.length === 0 || reviewMode) return;
+
+  reviewLiveState = {
+    state: cloneState(),
+    positionStack: positionStack.map(copyState),
+    gameOver,
+    hintMove: hintMove ? {...hintMove} : null
+  };
+  reviewStates = positionStack.map(copyState);
+  reviewStates.push(cloneState());
+  reviewMoves = moveHistory.map(m => ({...m}));
+  reviewIndex = reviewStates.length - 1;
+  reviewMode = true;
+  reviewAnalyzing = false;
+
+  document.getElementById('gameOverModal').classList.remove('active');
+  document.getElementById('reviewBar').classList.add('active');
+  document.getElementById('teachTip').style.display = 'none';
+  updateReviewPosition();
+}
+
+function exitReview() {
+  if (!reviewMode || !reviewLiveState) return;
+  const saved = reviewLiveState;
+  reviewMode = false;
+  reviewAnalyzing = false;
+  restoreState(saved.state);
+  positionStack = saved.positionStack.map(copyState);
+  gameOver = saved.gameOver;
+  hintMove = saved.hintMove;
+  reviewStates = [];
+  reviewMoves = [];
+  reviewLiveState = null;
+  document.getElementById('reviewBar').classList.remove('active');
+  document.getElementById('teachTip').style.display = teachingMode ? 'flex' : 'none';
+  renderBoard();
+}
+
+function analyzeReviewPosition() {
+  if (!reviewMode || reviewAnalyzing) return;
+  reviewAnalyzing = true;
+  const button = document.getElementById('reviewAnalyzeBtn');
+  button.textContent = '分析中…';
+  updateReviewPosition('正在用本地轻量引擎分析，老电脑可能需要1秒左右…');
+
+  setTimeout(() => {
+    restoreState(reviewStates[reviewIndex]);
+    const side = currentTurn;
+    const actual = reviewIndex < reviewMoves.length ? reviewMoves[reviewIndex] : null;
+    const result = findBestMove(side, 3, 0, 900);
+    const positionText = positionSummary(evaluateBoard(board));
+    let text = `${positionText}。`;
+
+    if (result && result.move) {
+      hintMove = { fromR: result.move.fromR, fromC: result.move.fromC, toR: result.move.toR, toC: result.move.toC };
+      if (actual) {
+        const bestScore = scoreAfterMove(result.move);
+        const actualScore = scoreAfterMove(actual);
+        const loss = Math.max(0, side === 'w' ? bestScore - actualScore : actualScore - bestScore);
+        let grade;
+        if (sameMove(actual, result.move)) grade = '✅ 推荐走法';
+        else if (loss <= 35) grade = '👍 优秀';
+        else if (loss <= 90) grade = '✔️ 尚可';
+        else if (loss <= 180) grade = '⚠️ 小失误';
+        else if (loss <= 350) grade = '❌ 失误';
+        else grade = '🚨 严重失误';
+        text += ` 实战 ${formatMove(actual)}：${grade}；引擎推荐 ${formatMove(result.move)}。`;
+      } else {
+        text += ` 当前推荐 ${formatMove(result.move)}（蓝色高亮）。`;
+      }
+    } else {
+      text += ' 当前没有可走步。';
+    }
+
+    reviewAnalyzing = false;
+    gameOver = true;
+    selectedSquare = null;
+    validMoves = [];
+    renderBoard();
+    document.getElementById('reviewProgress').textContent = ` · ${reviewIndex}/${reviewStates.length - 1} 步`;
+    document.getElementById('reviewResult').textContent = text;
+    document.getElementById('reviewPrevBtn').disabled = reviewIndex === 0;
+    document.getElementById('reviewNextBtn').disabled = reviewIndex === reviewStates.length - 1;
+    button.disabled = false;
+    button.textContent = '分析当前局面';
+  }, 50);
+}
+
+// ===================== AI Trigger =====================
+function maybeTriggerAI() {
+  if (tutorialMode || reviewMode) return;
+  if (!gameOver && currentTurn === aiColor) {
+    triggerAIMove();
+  }
+}
+
+function triggerAIMove() {
+  if (gameOver || isAiThinking) return;
+  isAiThinking = true;
+  updateUI();
+
+  setTimeout(() => {
+    const config = DIFFICULTY_CONFIG[aiDifficulty] || DIFFICULTY_CONFIG.easy;
+    // 教学提示只影响界面，不再偷偷降低用户选择的 AI 难度。
+    const result = findBestMove(aiColor, config.depth, config.randomness, config.timeLimit || 0);
+
+    if (result && result.move) {
+      makeMove(result.move, result.promotionPiece);
+    }
+    isAiThinking = false;
+    selectedSquare = null;
+    validMoves = [];
+    updatePieceRuleCard(null);
+    renderBoard();
+  }, 350);
+}
+
+// ===================== Game Control =====================
+function readSettings() {
+  document.querySelectorAll('#colorToggle .toggle-btn').forEach(btn => {
+    if (btn.classList.contains('active')) aiColor = opposite(btn.dataset.color);
+  });
+  aiDifficulty = document.getElementById('difficultySelect').value;
+}
+
+function newGame() {
+  reviewMode = false;
+  reviewAnalyzing = false;
+  reviewStates = [];
+  reviewMoves = [];
+  reviewLiveState = null;
+  document.getElementById('reviewBar').classList.remove('active');
+  readSettings();
+  teachingMode = document.getElementById('teachMode').checked;
+  hintMove = null;
+  initBoard();
+  document.getElementById('gameOverModal').classList.remove('active');
+  updatePieceRuleCard(null);
+  renderBoard();
+  if (teachingMode) updateTeachTip('新对局开始！点击你的棋子，查看安全走法');
+  if (aiColor === 'w' && !gameOver) {
+    triggerAIMove();
+  }
+}
+
+function undoMove() {
+  if (positionStack.length === 0 || isAiThinking) return;
+  const undoCount = positionStack.length >= 2 ? 2 : 1;
+  for (let i = 0; i < undoCount; i++) {
+    if (positionStack.length === 0) break;
+    restoreState(positionStack.pop());
+  }
+  gameOver = false;
+  document.getElementById('gameOverModal').classList.remove('active');
+  selectedSquare = null;
+  validMoves = [];
+  updatePieceRuleCard(null);
+  renderBoard();
+}
+
+// ===================== Event Listeners =====================
+document.getElementById('newGameBtn').addEventListener('click', newGame);
+document.getElementById('undoBtn').addEventListener('click', undoMove);
+document.getElementById('gameOverNewBtn').addEventListener('click', newGame);
+document.getElementById('reviewBtn').addEventListener('click', startReview);
+document.getElementById('gameOverReviewBtn').addEventListener('click', startReview);
+document.getElementById('reviewExitBtn').addEventListener('click', exitReview);
+document.getElementById('reviewAnalyzeBtn').addEventListener('click', analyzeReviewPosition);
+document.getElementById('reviewPrevBtn').addEventListener('click', () => {
+  if (!reviewMode || reviewAnalyzing || reviewIndex === 0) return;
+  reviewIndex--;
+  updateReviewPosition();
+});
+document.getElementById('reviewNextBtn').addEventListener('click', () => {
+  if (!reviewMode || reviewAnalyzing || reviewIndex >= reviewStates.length - 1) return;
+  reviewIndex++;
+  updateReviewPosition();
+});
+
+document.querySelectorAll('#colorToggle .toggle-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#colorToggle .toggle-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  });
+});
+
+document.getElementById('teachMode').addEventListener('change', (e) => {
+  teachingMode = e.target.checked;
+  const tipEl = document.getElementById('teachTip');
+  tipEl.style.display = teachingMode ? 'flex' : 'none';
+  if (!teachingMode) {
+    hintMove = null;
+    selectedSquare = null;
+    validMoves = [];
+    updatePieceRuleCard(null);
+  }
+  renderBoard();
+  if (teachingMode) updateTeachTip('教学模式已开启：选中棋子查看走法规则与安全走法，点"提示"获取最佳走法');
+});
+
+document.getElementById('hintBtn').addEventListener('click', showHint);
+
+// Tutorial event listeners
+document.getElementById('tutorialBtn').addEventListener('click', () => {
+  renderTutorialModal();
+  document.getElementById('tutorialModal').classList.add('active');
+});
+document.getElementById('tutorialCloseBtn').addEventListener('click', () => {
+  document.getElementById('tutorialModal').classList.remove('active');
+});
+document.getElementById('lessonExitBtn').addEventListener('click', exitTutorial);
+document.getElementById('graduationEntry').addEventListener('click', startGraduation);
+document.getElementById('lessonNextBtn').addEventListener('click', () => {
+  if (graduationMode) {
+    exitTutorial();
+    setTimeout(() => updateTeachTip('🎓 恭喜毕业！去实战中展示你的棋艺吧'), 100);
+  } else if (currentLesson < TUTORIAL_LESSONS.length - 1) {
+    startLesson(currentLesson + 1);
+  } else {
+    exitTutorial();
+    setTimeout(() => updateTeachTip('🎓 恭喜完成全部教程！可以开始实战了'), 100);
+  }
+});
+
+// ===================== Start =====================
+loadTutorialProgress();
+newGame();
+</script>
+</body>
+</html>

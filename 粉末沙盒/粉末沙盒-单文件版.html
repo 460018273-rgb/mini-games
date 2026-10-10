@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>粉末沙盒 · 元胞自动机</title>
+<style>
+/* 粉末沙盒 —— 深色像素风 UI */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: #141418;
+  color: #e8e8ec;
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- 顶栏 ---------- */
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 13px 22px;
+  border-bottom: 1px solid #26262e;
+}
+
+header h1 { font-size: 17px; font-weight: 700; letter-spacing: 1px; }
+header .sub { font-size: 11px; font-weight: 400; color: #6d6d78; margin-left: 8px; }
+
+.stats { font-size: 12px; color: #8a8a96; display: flex; gap: 18px; }
+.stats b { color: #e8e8ec; font-family: ui-monospace, "SF Mono", Consolas, monospace; font-weight: 600; }
+
+/* ---------- 布局 ---------- */
+
+main { flex: 1; display: flex; align-items: stretch; }
+
+aside {
+  width: 196px;
+  flex-shrink: 0;
+  padding: 14px 12px;
+  border-right: 1px solid #26262e;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ---------- 元素工具栏 ---------- */
+
+#toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+.el-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  background: #1e1e24;
+  border: 1px solid #2e2e38;
+  border-radius: 7px;
+  color: #cfcfd8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+  user-select: none;
+}
+
+.el-btn:hover { background: #26262e; border-color: #3d3d4a; }
+
+.el-btn.active {
+  border-color: #f0a340;
+  background: #2a2620;
+  box-shadow: 0 0 0 1px #f0a340 inset;
+}
+
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .18) inset;
+}
+
+/* ---------- 控制区 ---------- */
+
+.controls { display: flex; flex-direction: column; gap: 8px; }
+
+.controls label {
+  font-size: 11px;
+  color: #8a8a96;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+
+.controls label b { color: #e8e8ec; font-family: ui-monospace, monospace; }
+
+input[type="range"] { width: 100%; accent-color: #f0a340; }
+
+.ctrl-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+
+.ctrl-btns button {
+  padding: 8px 4px;
+  background: #1e1e24;
+  border: 1px solid #2e2e38;
+  border-radius: 7px;
+  color: #cfcfd8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background .12s;
+}
+
+.ctrl-btns button:hover { background: #26262e; }
+
+/* ---------- 提示 ---------- */
+
+.tips {
+  margin-top: auto;
+  padding: 10px;
+  background: #18181d;
+  border: 1px solid #24242c;
+  border-radius: 8px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #6d6d78;
+}
+
+/* ---------- 画布 ---------- */
+
+.stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  min-width: 0;
+}
+
+#game {
+  width: 100%;
+  max-width: 960px;
+  aspect-ratio: 8 / 5;
+  image-rendering: pixelated;
+  border-radius: 8px;
+  box-shadow: 0 6px 30px rgba(0, 0, 0, .5);
+  cursor: crosshair;
+  touch-action: none;
+  background: #101014;
+}
+
+/* ---------- 移动端 ---------- */
+
+@media (max-width: 700px) {
+  main { flex-direction: column; }
+  aside { width: 100%; border-right: none; border-bottom: 1px solid #26262e; }
+  #toolbar { grid-template-columns: repeat(6, 1fr); }
+  .tips { display: none; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>粉末沙盒 <span class="sub">元胞自动机 · 11 种元素</span></h1>
+  <div class="stats">
+    <span>FPS <b id="fps">--</b></span>
+    <span>粒子 <b id="count">0</b></span>
+  </div>
+</header>
+
+<main>
+  <aside>
+    <div id="toolbar"></div>
+
+    <div class="controls">
+      <label>笔刷大小 <b id="brush-val">4</b></label>
+      <input type="range" id="brush" min="1" max="24" value="4">
+      <div class="ctrl-btns">
+        <button id="btn-pause" title="空格">暂停</button>
+        <button id="btn-clear" title="C">清空</button>
+        <button id="btn-demo">示例</button>
+      </div>
+    </div>
+
+    <div class="tips">
+      左键绘制 · 右键擦除<br>
+      滚轮调笔刷 · 空格暂停 · C 清空<br><br>
+      试一试：擦掉岩浆袋下面的墙，<br>看它流下来点燃油、再遇水变石头。
+    </div>
+  </aside>
+
+  <div class="stage">
+    <canvas id="game"></canvas>
+  </div>
+</main>
+
+<script>
+'use strict';
+
+/* ============================================================
+ * 元素定义表
+ * type:     solid(静态固体) | powder(粉末) | liquid(液体) | gas(气体)
+ * density:  密度 —— 粉末/液体之间按密度沉降交换（大的沉入小的）
+ * jitter:   单颗粒颜色随机抖动幅度（颗粒感）
+ * dispersion: 液体横向流动能力（步数，越大越"稀"）
+ * flammable:  被点燃概率（0 = 不可燃）
+ * life:     气体/火焰的寿命（帧数）
+ * ============================================================ */
+
+const E = {
+  EMPTY: 0,   // 橡皮
+  WALL: 1,    // 墙（不可摧毁）
+  SAND: 2,    // 沙
+  WATER: 3,   // 水
+  OIL: 4,     // 油（浮在水上，易燃）
+  FIRE: 5,    // 火
+  SMOKE: 6,   // 烟
+  STEAM: 7,   // 蒸汽（可冷凝回水）
+  PLANT: 8,   // 植物（遇水生长，可燃）
+  LAVA: 9,    // 岩浆（遇水成石，熔化沙石，点燃一切）
+  STONE: 10,  // 石头（粉末，可被岩浆熔化）
+};
+
+const ELEMENTS = [];
+
+ELEMENTS[E.EMPTY] = { name: '橡皮', type: 'empty',  color: [16, 16, 20],    jitter: 0 };
+ELEMENTS[E.WALL]  = { name: '墙',   type: 'solid',  color: [112, 112, 122], jitter: 12 };
+ELEMENTS[E.SAND]  = { name: '沙',   type: 'powder', color: [206, 180, 122], jitter: 26, density: 5 };
+ELEMENTS[E.WATER] = { name: '水',   type: 'liquid', color: [46, 118, 235],  jitter: 14, density: 2, dispersion: 6 };
+ELEMENTS[E.OIL]   = { name: '油',   type: 'liquid', color: [92, 70, 40],    jitter: 8,  density: 1, dispersion: 3, flammable: 0.4 };
+ELEMENTS[E.FIRE]  = { name: '火',   type: 'fire',   color: [255, 130, 30],  jitter: 40, life: 50 };
+ELEMENTS[E.SMOKE] = { name: '烟',   type: 'gas',    color: [72, 72, 78],    jitter: 10, life: 110 };
+ELEMENTS[E.STEAM] = { name: '蒸汽', type: 'gas',    color: [186, 198, 216], jitter: 14, life: 220 };
+ELEMENTS[E.PLANT] = { name: '植物', type: 'solid',  color: [42, 148, 58],   jitter: 30, flammable: 0.02 };
+ELEMENTS[E.LAVA]  = { name: '岩浆', type: 'liquid', color: [232, 88, 24],   jitter: 20, density: 6, dispersion: 1 };
+ELEMENTS[E.STONE] = { name: '石头', type: 'powder', color: [130, 130, 132], jitter: 16, density: 6 };
+
+/* ===== 颜色工具 ===== */
+
+// 打包为 canvas ImageData 的小端 ABGR 格式
+function packColor(r, g, b) {
+  return (255 << 24) | (b << 16) | (g << 8) | r;
+}
+
+// 基础色 ± 抖动 —— 每颗粒在放置时生成一次固定色，产生颗粒质感
+function jitterColor(base, jitter) {
+  const d = (Math.random() * 2 - 1) * jitter;
+  const r = Math.max(0, Math.min(255, base[0] + d)) | 0;
+  const g = Math.max(0, Math.min(255, base[1] + d * 0.8)) | 0;
+  const b = Math.max(0, Math.min(255, base[2] + d * 0.6)) | 0;
+  return packColor(r, g, b);
+}
+
+/* ===== 邻居偏移 ===== */
+
+const NEIGH4 = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+const NEIGH8 = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
+
+</script>
+<script>
+'use strict';
+
+/* ============================================================
+ * 元胞自动机核心
+ * - 自底向上逐行扫描，行内方向逐帧交替（避免整体偏移）
+ * - moved[] 记录本帧已更新的格子，防止一格连跳
+ * - 粉末/液体按密度沉降交换；火点燃可燃物；岩浆遇水成石
+ * ============================================================ */
+
+class Simulation {
+  constructor(w, h) {
+    this.w = w;
+    this.h = h;
+    const n = w * h;
+    this.grid  = new Uint8Array(n);    // 元素 id
+    this.color = new Uint32Array(n);   // 每颗粒固定颜色（packed）
+    this.life  = new Uint16Array(n);   // 火焰/气体剩余寿命
+    this.seed  = new Uint8Array(n);    // 每颗粒随机种子（渲染动画用）
+    this.moved = new Uint32Array(n);   // 本帧已移动标记
+    this.frame = 0;
+    this.count = 0;                    // 非空粒子数（渲染时统计）
+  }
+
+  idx(x, y) { return y * this.w + x; }
+
+  // 越界一律视为墙（不可通过）
+  at(x, y) {
+    if (x < 0 || x >= this.w || y < 0 || y >= this.h) return E.WALL;
+    return this.grid[y * this.w + x];
+  }
+
+  // 放置元素（生成随机颗粒色 / 随机寿命 / 随机种子）
+  set(x, y, id) {
+    if (x < 0 || x >= this.w || y < 0 || y >= this.h) return;
+    const i = this.idx(x, y);
+    const el = ELEMENTS[id];
+    this.grid[i] = id;
+    this.color[i] = jitterColor(el.color, el.jitter);
+    this.life[i] = el.life ? ((el.life * (0.6 + Math.random() * 0.8)) | 0) : 0;
+    this.seed[i] = (Math.random() * 256) | 0;
+  }
+
+  clear() {
+    this.grid.fill(E.EMPTY);
+  }
+
+  // 交换 i、j 两格的全部属性，并把目标格标记为"本帧已动"
+  move(i, j) {
+    const g = this.grid[i], c = this.color[i], l = this.life[i], s = this.seed[i];
+    this.grid[i]  = this.grid[j];
+    this.color[i] = this.color[j];
+    this.life[i]  = this.life[j];
+    this.seed[i]  = this.seed[j];
+    this.grid[j]  = g;
+    this.color[j] = c;
+    this.life[j]  = l;
+    this.seed[j]  = s;
+    this.moved[j] = this.frame;
+  }
+
+  step() {
+    this.frame++;
+    const w = this.w, h = this.h;
+    for (let y = h - 1; y >= 0; y--) {
+      const ltr = ((this.frame + y) & 1) === 0;
+      for (let k = 0; k < w; k++) {
+        const x = ltr ? k : w - 1 - k;
+        const i = y * w + x;
+        const id = this.grid[i];
+        if (id === E.EMPTY || id === E.WALL) continue;
+        if (this.moved[i] === this.frame) continue;
+        switch (ELEMENTS[id].type) {
+          case 'powder': this.updatePowder(x, y, i, id); break;
+          case 'liquid': this.updateLiquid(x, y, i, id); break;
+          case 'gas':    this.updateGas(x, y, i, id);    break;
+          case 'fire':   this.updateFire(x, y, i);       break;
+          case 'solid':  if (id === E.PLANT) this.updatePlant(x, y, i); break;
+        }
+      }
+    }
+  }
+
+  /* ---------- 粉末（沙 / 石头） ---------- */
+
+  updatePowder(x, y, i, id) {
+    const me = ELEMENTS[id];
+    const below = this.at(x, y + 1);
+
+    if (below === E.EMPTY) { this.move(i, this.idx(x, y + 1)); return; }
+
+    const be = ELEMENTS[below];
+    // 沉入更轻的液体；穿过气体下沉（气体被排开上浮）
+    if (be.type === 'liquid' && me.density > be.density) {
+      this.move(i, this.idx(x, y + 1));
+      return;
+    }
+    if (be.type === 'gas') {
+      this.move(i, this.idx(x, y + 1));
+      return;
+    }
+
+    // 斜向滑落（石头更"钝"，滑动概率低）
+    const slideP = id === E.SAND ? 1 : 0.55;
+    if (Math.random() < slideP) {
+      const dir = Math.random() < 0.5 ? -1 : 1;
+      for (const dx of [dir, -dir]) {
+        const t = this.at(x + dx, y + 1);
+        if (t === E.EMPTY || ELEMENTS[t].type === 'gas') {
+          this.move(i, this.idx(x + dx, y + 1)); return;
+        }
+        const te = ELEMENTS[t];
+        if (te.type === 'liquid' && me.density > te.density) {
+          this.move(i, this.idx(x + dx, y + 1)); return;
+        }
+      }
+    }
+  }
+
+  /* ---------- 液体（水 / 油 / 岩浆） ---------- */
+
+  updateLiquid(x, y, i, id) {
+    // 岩浆反应优先：遇水固化、熔化沙石、点燃可燃物
+    if (id === E.LAVA && this.lavaReact(x, y)) return;
+    // 水的主动冷却：直接淬火岩浆，或沿冷凝壳裂缝渗透推进冷却前锋
+    if (id === E.WATER && this.waterCool(x, y)) return;
+
+    const me = ELEMENTS[id];
+
+    // 岩浆粘稠：部分帧休眠，流动迟缓
+    if (id === E.LAVA && Math.random() < 0.4) return;
+
+    const below = this.at(x, y + 1);
+    if (below === E.EMPTY) { this.move(i, this.idx(x, y + 1)); return; }
+
+    const be = ELEMENTS[below];
+    // 更重的液体下沉（水沉到油下）；液体穿过气体下沉（冒泡的逆过程）
+    if (be.type === 'liquid' && me.density > be.density) {
+      this.move(i, this.idx(x, y + 1));
+      return;
+    }
+    if (be.type === 'gas') {
+      this.move(i, this.idx(x, y + 1));
+      return;
+    }
+
+    // 斜下流动
+    const dir = Math.random() < 0.5 ? -1 : 1;
+    for (const dx of [dir, -dir]) {
+      const t = this.at(x + dx, y + 1);
+      if (t === E.EMPTY || ELEMENTS[t].type === 'gas') { this.move(i, this.idx(x + dx, y + 1)); return; }
+      const te = ELEMENTS[t];
+      if (te.type === 'liquid' && me.density > te.density) {
+        this.move(i, this.idx(x + dx, y + 1)); return;
+      }
+    }
+
+    // 横向摊平（dispersion 越大越"稀"）
+    if (me.dispersion > 0) {
+      const d = Math.random() < 0.5 ? -1 : 1;
+      let nx = x;
+      for (let s = 0; s < me.dispersion; s++) {
+        if (this.at(nx + d, y) === E.EMPTY) nx += d;
+        else break;
+      }
+      if (nx !== x) this.move(i, this.idx(nx, y));
+    }
+  }
+
+  // 在 (x, y) 生成冷凝玄武岩：带 life=1 标记，永久免疫岩浆再熔化
+  makeBasalt(x, y) {
+    const i = this.idx(x, y);
+    this.set(x, y, E.STONE);
+    this.life[i] = 1;
+    this.color[i] = jitterColor([102, 102, 110], 16);   // 玄武岩偏深色
+    this.moved[i] = this.frame;
+  }
+
+  // 判断 (x, y) 是否为冷凝玄武岩（life>0 的石头）
+  isBasalt(x, y) {
+    if (x < 0 || x >= this.w || y < 0 || y >= this.h) return false;
+    const i = this.idx(x, y);
+    return this.grid[i] === E.STONE && this.life[i] > 0;
+  }
+
+  // 水的主动冷却。返回 true 表示本格已汽化、跳过移动。
+  // 背景：冷凝壳一旦成型会把水和岩浆隔死（壳永久免疫熔化），
+  // 下面的岩浆永远接触不到水 —— 所以让水能沿壳的"裂缝"渗透，
+  // 冷却前锋逐层向岩浆内部推进，每推进一格消耗一格水。
+  waterCool(x, y) {
+    // 快速预检：四邻既没有岩浆也没有玄武岩壳就直接返回
+    let nearLava = false, nearCrust = false;
+    for (const [dx, dy] of NEIGH4) {
+      const t = this.at(x + dx, y + dy);
+      if (t === E.LAVA) nearLava = true;
+      else if (this.isBasalt(x + dx, y + dy)) nearCrust = true;
+    }
+    if (!nearLava && !nearCrust) return false;
+    if (Math.random() > 0.45) return false;   // 控制反应节奏
+
+    // 直接接触：岩浆冷凝，水汽化（岩浆侧休眠时由水侧补刀）
+    if (nearLava) {
+      for (const [dx, dy] of NEIGH4) {
+        if (this.at(x + dx, y + dy) === E.LAVA) {
+          this.makeBasalt(x + dx, y + dy);
+          this.set(x, y, E.STEAM);
+          return true;
+        }
+      }
+    }
+
+    // 渗透：从水格出发做限深 BFS，只穿过玄武岩壳（裂缝），找壳后的岩浆
+    const seen = new Set([this.idx(x, y)]);
+    const q = [[x, y, 0]];
+    while (q.length) {
+      const [cx, cy, d] = q.shift();
+      if (d >= 6) continue;                    // 渗透深度上限
+      for (const [dx, dy] of NEIGH4) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || nx >= this.w || ny < 0 || ny >= this.h) continue;
+        const ni = this.idx(nx, ny);
+        if (seen.has(ni)) continue;
+        const t = this.grid[ni];
+        if (t === E.LAVA) {
+          this.makeBasalt(nx, ny);             // 冷却前锋推进一格
+          this.set(x, y, E.STEAM);
+          return true;
+        }
+        if (t === E.STONE && this.life[ni] > 0) {
+          seen.add(ni);
+          q.push([nx, ny, d + 1]);
+        }
+      }
+    }
+    return false;
+  }
+
+  // 岩浆的化学反应，返回 true 表示本格已转化、跳过移动
+  lavaReact(x, y) {
+    for (const [dx, dy] of NEIGH8) {
+      const nx = x + dx, ny = y + dy;
+      const t = this.at(nx, ny);
+      if (t === E.WATER) {
+        // 遇水：岩浆固化成玄武岩（永久免疫再熔化），水汽化为蒸汽。
+        // 若不免疫，刚结的壳会被邻居岩浆熔回去，形成"结壳→回熔→又烧水"循环
+        this.makeBasalt(x, y);
+        this.set(nx, ny, E.STEAM);
+        return true;
+      }
+      const ni = this.idx(nx, ny);
+      if (t === E.SAND && Math.random() < 0.015) {
+        // 缓慢熔化沙 —— 标记 moved 防止新岩浆当帧链式传染
+        this.set(nx, ny, E.LAVA);
+        this.moved[ni] = this.frame;
+      } else if (t === E.STONE && this.life[ni] === 0 && Math.random() < 0.015) {
+        // 只熔化人工/自然放置的普通石头；冷凝玄武岩（life>0）永久免疫
+        this.set(nx, ny, E.LAVA);
+        this.moved[ni] = this.frame;
+      } else if (t === E.OIL && Math.random() < 0.5) {
+        this.ignite(nx, ny);
+      } else if (t === E.PLANT && Math.random() < 0.12) {
+        this.ignite(nx, ny);
+      }
+    }
+    return false;
+  }
+
+  /* ---------- 火 ---------- */
+
+  updateFire(x, y, i) {
+    // 寿命耗尽 → 烟或湮灭
+    if (--this.life[i] <= 0) {
+      this.set(x, y, Math.random() < 0.25 ? E.SMOKE : E.EMPTY);
+      return;
+    }
+
+    // 与邻居交互：遇水熄灭，点燃可燃物
+    for (const [dx, dy] of NEIGH8) {
+      const nx = x + dx, ny = y + dy;
+      const t = this.at(nx, ny);
+      if (t === E.WATER) {
+        this.set(x, y, Math.random() < 0.5 ? E.STEAM : E.SMOKE);
+        return;
+      }
+      const te = ELEMENTS[t];
+      if (te.flammable && Math.random() < te.flammable) {
+        this.ignite(nx, ny);
+      }
+    }
+
+    // 下方是可燃物时贴着烧，否则上浮窜动
+    const below = this.at(x, y + 1);
+    const belowEl = ELEMENTS[below];
+    if (belowEl.flammable && Math.random() < 0.6) return;
+
+    if (Math.random() < 0.85) {
+      const dirs = [[0, -1], [-1, -1], [1, -1], [-1, 0], [1, 0]];
+      const [dx, dy] = dirs[(Math.random() * dirs.length) | 0];
+      if (this.at(x + dx, y + dy) === E.EMPTY) {
+        this.move(i, this.idx(x + dx, y + dy));
+      }
+    }
+  }
+
+  // 把 (x, y) 点燃为火焰
+  ignite(x, y) {
+    if (x < 0 || x >= this.w || y < 0 || y >= this.h) return;
+    this.set(x, y, E.FIRE);
+    this.life[this.idx(x, y)] = ((ELEMENTS[E.FIRE].life * (0.4 + Math.random() * 0.9)) | 0);
+  }
+
+  /* ---------- 气体（烟 / 蒸汽） ---------- */
+
+  updateGas(x, y, i, id) {
+    // 寿命耗尽：蒸汽有概率凝结成水（下雨效果），烟直接消散
+    if (--this.life[i] <= 0) {
+      this.set(x, y, id === E.STEAM && Math.random() < 0.3 ? E.WATER : E.EMPTY);
+      return;
+    }
+
+    // 蒸汽随机冷凝（积在顶部后慢慢化水滴落）
+    if (id === E.STEAM && Math.random() < 0.0012) {
+      this.set(x, y, E.WATER);
+      return;
+    }
+
+    // 上升 + 随机漂移
+    const r = Math.random();
+    let dx = 0, dy = -1;
+    if (r < 0.3) dx = -1;
+    else if (r < 0.6) dx = 1;
+    if (Math.random() < 0.12) dy = 0;
+
+    if (this.at(x + dx, y + dy) === E.EMPTY) {
+      this.move(i, this.idx(x + dx, y + dy));
+    } else {
+      // 上方受阻 → 横向散开（最终摊在顶部）
+      const d = Math.random() < 0.5 ? -1 : 1;
+      if (this.at(x + d, y) === E.EMPTY) this.move(i, this.idx(x + d, y));
+    }
+  }
+
+  /* ---------- 植物 ---------- */
+
+  updatePlant(x, y, i) {
+    // 吸收邻近的水生长（水变植物）
+    if (Math.random() < 0.08) {
+      for (const [dx, dy] of NEIGH8) {
+        if (this.at(x + dx, y + dy) === E.WATER) {
+          this.set(x + dx, y + dy, E.PLANT);
+          break;
+        }
+      }
+    }
+  }
+}
+
+</script>
+<script>
+'use strict';
+
+/* ============================================================
+ * 渲染器 —— ImageData 像素级直写
+ * - 网格即像素：240×150 的 canvas 被 CSS 拉伸 + pixelated
+ * - 火焰按剩余寿命做颜色插值（白黄 → 橙 → 暗红）
+ * - 岩浆随时间脉动，水面有微光
+ * ============================================================ */
+
+const BG_PACKED = packColor(16, 16, 20);
+
+class Renderer {
+  constructor(canvas, sim) {
+    this.sim = sim;
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    canvas.width = sim.w;
+    canvas.height = sim.h;
+    this.img = this.ctx.createImageData(sim.w, sim.h);
+    this.buf = new Uint32Array(this.img.data.buffer);
+    this.tick = 0;
+  }
+
+  render() {
+    const sim = this.sim;
+    const n = sim.w * sim.h;
+    const { grid, color, life, seed } = sim;
+    const t = this.tick++;
+    let count = 0;
+
+    for (let i = 0; i < n; i++) {
+      const id = grid[i];
+      if (id === E.EMPTY) { this.buf[i] = BG_PACKED; continue; }
+      count++;
+
+      if (id === E.FIRE) {
+        // 新火亮黄白 → 老火暗红，加种子抖动闪动
+        const lf = life[i] / ELEMENTS[E.FIRE].life;      // 0~1
+        const flick = (seed[i] / 255) * 0.3;
+        const r = 255;
+        const g = Math.min(255, (40 + lf * 170 + flick * 70) | 0);
+        const b = Math.min(255, (lf * lf * 110 + flick * 40) | 0);
+        this.buf[i] = packColor(r, g, b);
+
+      } else if (id === E.LAVA) {
+        // 缓慢明暗脉动
+        const wave = Math.sin((t + seed[i] * 8) * 0.06) * 0.5 + 0.5;
+        const c = ELEMENTS[E.LAVA].color;
+        this.buf[i] = packColor(
+          Math.min(255, c[0] + wave * 26) | 0,
+          Math.min(255, c[1] + wave * 46) | 0,
+          c[2]
+        );
+
+      } else if (id === E.WATER) {
+        // 微光粼粼
+        const c = ELEMENTS[E.WATER].color;
+        const wave = Math.sin(t * 0.09 + seed[i] * 0.35) * 13;
+        this.buf[i] = packColor(
+          Math.min(255, c[0] + wave) | 0,
+          Math.min(255, c[1] + wave) | 0,
+          Math.min(255, c[2] + wave + 10) | 0
+        );
+
+      } else {
+        this.buf[i] = color[i];
+      }
+    }
+
+    sim.count = count;
+    this.ctx.putImageData(this.img, 0, 0);
+  }
+}
+
+</script>
+<script>
+'use strict';
+
+/* ============================================================
+ * 输入交互
+ * - 左键绘制 / 右键擦除（contextmenu 已屏蔽）
+ * - 滚轮调整笔刷半径（1~24），可通过 onBrushChange 回调同步 UI
+ * - pointermove 快速拖动时做线性插值补点，避免断线
+ * - 粉末/液体/气体按密度撒点，固体（墙/植物）实心填充
+ * ============================================================ */
+
+class Input {
+  constructor(canvas, sim, state) {
+    this.canvas = canvas;
+    this.sim = sim;
+    this.state = state;          // { element, brush, paused }
+    this.pointer = null;         // 当前网格坐标 [gx, gy]
+    this.lastPaint = null;       // 上次落笔网格坐标（补点用）
+    this.down = false;
+    this.erase = false;
+    this.onBrushChange = null;   // 滚轮改笔刷后通知 UI 的回调
+
+    canvas.addEventListener('pointerdown', e => {
+      canvas.setPointerCapture(e.pointerId);
+      this.down = true;
+      this.erase = e.button === 2;
+      this.updatePointer(e);
+      this.lastPaint = [...this.pointer];
+      this.paint();
+    });
+
+    canvas.addEventListener('pointermove', e => this.updatePointer(e));
+
+    window.addEventListener('pointerup', () => {
+      this.down = false;
+      this.erase = false;
+      this.lastPaint = null;
+    });
+
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+    canvas.addEventListener('wheel', e => {
+      e.preventDefault();
+      const b = Math.max(1, Math.min(24, this.state.brush + (e.deltaY < 0 ? 1 : -1)));
+      this.state.brush = b;
+      if (this.onBrushChange) this.onBrushChange(b);
+    }, { passive: false });
+  }
+
+  // 屏幕坐标 → 网格坐标
+  toGrid(e) {
+    const r = this.canvas.getBoundingClientRect();
+    const gx = Math.floor((e.clientX - r.left) / r.width * this.sim.w);
+    const gy = Math.floor((e.clientY - r.top) / r.height * this.sim.h);
+    return [gx, gy];
+  }
+
+  updatePointer(e) {
+    this.pointer = this.toGrid(e);
+    if (this.down) {
+      // 落笔移动插值：跨越多个格子时补上中间点
+      const [lx, ly] = this.lastPaint || this.pointer;
+      const [gx, gy] = this.pointer;
+      const dist = Math.max(Math.abs(gx - lx), Math.abs(gy - ly));
+      const steps = Math.max(1, Math.ceil(dist / Math.max(this.state.brush, 1)));
+      for (let s = 1; s <= steps; s++) {
+        const ix = Math.round(lx + (gx - lx) * s / steps);
+        const iy = Math.round(ly + (gy - ly) * s / steps);
+        this.paintAt(ix, iy);
+      }
+      this.lastPaint = [gx, gy];
+    }
+  }
+
+  paint() {
+    if (this.pointer) this.paintAt(this.pointer[0], this.pointer[1]);
+  }
+
+  paintAt(cx, cy) {
+    const id = this.erase ? E.EMPTY : this.state.element;
+    const el = ELEMENTS[id];
+    const solid = el.type === 'solid' || el.type === 'empty';
+    const r = this.state.brush;
+    const r2 = r * r;
+
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx * dx + dy * dy > r2) continue;
+        const x = cx + dx, y = cy + dy;
+        if (x < 0 || x >= this.sim.w || y < 0 || y >= this.sim.h) continue;
+
+        const i = this.sim.idx(x, y);
+        if (id !== E.EMPTY) {
+          if (this.sim.grid[i] !== E.EMPTY) continue;      // 不覆盖已有元素
+          if (!solid && Math.random() > 0.55) continue;    // 散点更自然
+        }
+        this.sim.set(x, y, id);
+      }
+    }
+  }
+}
+
+</script>
+<script>
+'use strict';
+
+/* ============================================================
+ * 入口与 UI 装配
+ * - 装配 Simulation / Renderer / Input
+ * - 生成元素工具栏、笔刷滑块、控制按钮
+ * - requestAnimationFrame 主循环（暂停时仍可绘制和渲染）
+ * - 初始演示场景：沙丘 + 水池 + 植物 + 一袋岩浆（祸根）
+ * ============================================================ */
+
+(function () {
+  const W = 240, H = 150;
+
+  const sim = new Simulation(W, H);
+  const canvas = document.getElementById('game');
+  const renderer = new Renderer(canvas, sim);
+  const state = { element: E.SAND, brush: 4, paused: false };
+  const input = new Input(canvas, sim, state);
+
+  /* ---------- 工具栏 ---------- */
+
+  const TOOL_ORDER = [
+    E.SAND, E.WATER, E.WALL, E.FIRE, E.OIL, E.PLANT,
+    E.LAVA, E.STONE, E.STEAM, E.SMOKE, E.EMPTY,
+  ];
+
+  function buildToolbar() {
+    const bar = document.getElementById('toolbar');
+    for (const id of TOOL_ORDER) {
+      const el = ELEMENTS[id];
+      const btn = document.createElement('button');
+      btn.className = 'el-btn' + (id === state.element ? ' active' : '');
+      const rgb = el.color.map(c => Math.round(c)).join(',');
+      btn.innerHTML = `<span class="swatch" style="background:rgb(${rgb})"></span>${el.name}`;
+      btn.addEventListener('click', () => {
+        state.element = id;
+        document.querySelectorAll('.el-btn').forEach(b => b.classList.toggle('active', b === btn));
+      });
+      bar.appendChild(btn);
+    }
+  }
+
+  /* ---------- 控制按钮 ---------- */
+
+  const btnPause = document.getElementById('btn-pause');
+  const btnClear = document.getElementById('btn-clear');
+  const btnDemo  = document.getElementById('btn-demo');
+
+  function togglePause() {
+    state.paused = !state.paused;
+    btnPause.textContent = state.paused ? '继续' : '暂停';
+  }
+
+  function clearAll() {
+    sim.clear();
+  }
+
+  btnPause.addEventListener('click', togglePause);
+  btnClear.addEventListener('click', clearAll);
+  btnDemo.addEventListener('click', demoScene);
+
+  /* ---------- 笔刷 ---------- */
+
+  const brushSlider = document.getElementById('brush');
+  const brushVal = document.getElementById('brush-val');
+
+  brushSlider.addEventListener('input', () => {
+    state.brush = +brushSlider.value;
+    brushVal.textContent = state.brush;
+  });
+
+  input.onBrushChange = v => {
+    brushSlider.value = v;
+    brushVal.textContent = v;
+  };
+
+  /* ---------- 键盘 ---------- */
+
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); togglePause(); }
+    else if (e.key === 'c' || e.key === 'C') { clearAll(); }
+  });
+
+  /* ---------- 笔刷光标 ---------- */
+
+  function drawBrushCursor() {
+    if (!input.pointer) return;
+    const [gx, gy] = input.pointer;
+    if (gx < 0 || gx >= W || gy < 0 || gy >= H) return;
+    const ctx = renderer.ctx;
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(gx + 0.5, gy + 0.5, Math.max(state.brush, 1), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  /* ---------- 演示场景 ---------- */
+
+  function fillRect(x0, y0, x1, y1, id) {
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++)
+        sim.set(x, y, id);
+  }
+
+  function demoScene() {
+    sim.clear();
+
+    // 石头地面
+    fillRect(0, 140, W - 1, H - 1, E.STONE);
+
+    // 左侧沙丘（正弦轮廓）
+    for (let x = 14; x <= 78; x++) {
+      const t = (x - 14) / 64;
+      const hgt = Math.round(34 * Math.sin(Math.PI * t));
+      if (hgt > 0) fillRect(x, 140 - hgt, x, 139, E.SAND);
+    }
+
+    // 沙丘上空一坨水（落地后被植物喝掉 / 渗进沙堆）
+    fillRect(38, 92, 52, 98, E.WATER);
+
+    // 中部水池（石壁围住）
+    fillRect(96, 128, 156, 139, E.EMPTY);
+    fillRect(96, 131, 156, 139, E.WATER);
+    fillRect(94, 128, 95, 139, E.WALL);
+    fillRect(157, 128, 158, 139, E.WALL);
+
+    // 水边植物
+    fillRect(88, 137, 93, 139, E.PLANT);
+    fillRect(160, 136, 165, 139, E.PLANT);
+
+    // 地面上一滩油（易燃物）
+    fillRect(190, 134, 214, 139, E.OIL);
+
+    // 右上一袋岩浆（全封闭墙容器）—— 擦掉任一面墙，看它倾泻而下
+    fillRect(176, 56, 226, 64, E.LAVA);
+    fillRect(174, 65, 228, 67, E.WALL);   // 底
+    fillRect(174, 54, 175, 64, E.WALL);   // 左壁
+    fillRect(227, 54, 228, 64, E.WALL);   // 右壁
+  }
+
+  /* ---------- 主循环 ---------- */
+
+  let last = performance.now();
+  let fpsAcc = 0, fpsN = 0, uiTimer = 0;
+  const elFps = document.getElementById('fps');
+  const elCount = document.getElementById('count');
+
+  function loop(now) {
+    const dt = Math.max(now - last, 1);
+    last = now;
+
+    if (!state.paused) sim.step();
+    renderer.render();
+    drawBrushCursor();
+
+    // FPS / 粒子数每 0.5s 刷新一次
+    fpsAcc += 1000 / dt;
+    fpsN++;
+    uiTimer += dt;
+    if (uiTimer > 500) {
+      elFps.textContent = (fpsAcc / fpsN).toFixed(0);
+      elCount.textContent = sim.count;
+      fpsAcc = 0; fpsN = 0; uiTimer = 0;
+    }
+
+    requestAnimationFrame(loop);
+  }
+
+  /* ---------- 启动 ---------- */
+
+  buildToolbar();
+  demoScene();
+  requestAnimationFrame(loop);
+})();
+
+</script>
+</body>
+</html>

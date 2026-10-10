@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>离线五子棋</title>
+  <style>
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f3eee4;color:#30271f;font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+    .app{width:min(94vw,720px);padding:18px}.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}h1{font-size:24px;margin:0}.status{font-weight:700;color:#7b431f}
+    .panel{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}select,button{border:1px solid #b99a72;background:#fffaf2;color:#30271f;border-radius:9px;padding:9px 12px;font:inherit;cursor:pointer}button:hover{background:#f5e5cf}button:disabled{opacity:.55;cursor:not-allowed}
+    .board-wrap{position:relative;width:100%;aspect-ratio:1;border:8px solid #8a582f;border-radius:8px;overflow:hidden;box-shadow:0 8px 24px #5b3b2233;background:#d6a45f}canvas{display:block;width:100%;height:100%;touch-action:manipulation;cursor:pointer}
+    .note{font-size:13px;color:#715f50;margin:10px 2px 0;line-height:1.5}@media(max-width:520px){.app{padding:10px}.top{align-items:flex-start;flex-direction:column}h1{font-size:21px}select,button{padding:8px 10px}}
+  </style>
+</head>
+<body>
+<main class="app">
+  <div class="top"><h1>五子棋 · 人机对战</h1><div id="status" class="status">你的回合（黑棋）</div></div>
+  <div class="panel">
+    <select id="level" title="难度"><option value="easy">简单</option><option value="normal" selected>普通</option><option value="hard">困难</option></select>
+    <select id="color" title="执棋"><option value="1" selected>我执黑棋</option><option value="2">我执白棋</option></select>
+    <button id="restart">重新开始</button><button id="undo">悔棋</button>
+  </div>
+  <div class="board-wrap"><canvas id="board" aria-label="十五路五子棋棋盘"></canvas></div>
+  <p class="note">规则：横、竖或斜线先连成五子者胜。切换难度或执棋后会自动重新开始。</p>
+</main>
+<script>
+(()=>{
+  'use strict';
+  const N=15, EMPTY=0, BLACK=1, WHITE=2;
+  const canvas=document.getElementById('board'), ctx=canvas.getContext('2d');
+  const statusEl=document.getElementById('status'), levelEl=document.getElementById('level'), colorEl=document.getElementById('color');
+  const restartBtn=document.getElementById('restart'), undoBtn=document.getElementById('undo');
+  let board, history, human, ai, turn, over=false, thinking=false, cell=0, pad=0;
+  const dirs=[[1,0],[0,1],[1,1],[1,-1]];
+
+  function reset(){
+    board=Array.from({length:N},()=>Array(N).fill(EMPTY)); history=[]; over=false; thinking=false;
+    human=Number(colorEl.value); ai=3-human; turn=BLACK; restartBtn.disabled=false; draw(); updateStatus();
+    if(ai===BLACK) setTimeout(aiMove,250);
+  }
+  function resize(){
+    const size=canvas.clientWidth, ratio=Math.min(devicePixelRatio||1,2); canvas.width=size*ratio; canvas.height=size*ratio;
+    ctx.setTransform(ratio,0,0,ratio,0,0); pad=size/30; cell=(size-pad*2)/(N-1); draw();
+  }
+  function draw(){
+    if(!cell)return; const size=canvas.clientWidth; ctx.clearRect(0,0,size,size); ctx.fillStyle='#d6a45f';ctx.fillRect(0,0,size,size);
+    ctx.strokeStyle='#583a22';ctx.lineWidth=1;
+    for(let i=0;i<N;i++){const p=pad+i*cell;ctx.beginPath();ctx.moveTo(pad,p);ctx.lineTo(size-pad,p);ctx.stroke();ctx.beginPath();ctx.moveTo(p,pad);ctx.lineTo(p,size-pad);ctx.stroke()}
+    ctx.fillStyle='#4a2d19';[[3,3],[3,11],[7,7],[11,3],[11,11]].forEach(([x,y])=>{ctx.beginPath();ctx.arc(pad+x*cell,pad+y*cell,Math.max(2,cell*.09),0,Math.PI*2);ctx.fill()});
+    history.forEach((m,i)=>drawStone(m.x,m.y,m.p,i===history.length-1));
+  }
+  function drawStone(x,y,p,last){
+    const cx=pad+x*cell,cy=pad+y*cell,r=cell*.42,g=ctx.createRadialGradient(cx-r*.35,cy-r*.4,r*.08,cx,cy,r);
+    if(p===BLACK){g.addColorStop(0,'#666');g.addColorStop(.35,'#222');g.addColorStop(1,'#050505')}else{g.addColorStop(0,'#fff');g.addColorStop(.6,'#eee');g.addColorStop(1,'#aaa')}
+    ctx.fillStyle=g;ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.fill();ctx.strokeStyle=p===BLACK?'#000':'#888';ctx.stroke();
+    if(last){ctx.fillStyle=p===BLACK?'#fff':'#b42318';ctx.beginPath();ctx.arc(cx,cy,Math.max(2,r*.13),0,Math.PI*2);ctx.fill()}
+  }
+  function updateStatus(text){
+    if(text){statusEl.textContent=text;return} if(over)return;
+    statusEl.textContent=thinking?'电脑思考中…':turn===human?`你的回合（${human===BLACK?'黑':'白'}棋）`:'电脑回合';
+  }
+  function place(x,y,p){board[y][x]=p;history.push({x,y,p});draw();return won(x,y,p)}
+  function won(x,y,p){return dirs.some(([dx,dy])=>1+count(x,y,dx,dy,p)+count(x,y,-dx,-dy,p)>=5)}
+  function count(x,y,dx,dy,p){let n=0;for(x+=dx,y+=dy;inside(x,y)&&board[y][x]===p;x+=dx,y+=dy)n++;return n}
+  function inside(x,y){return x>=0&&x<N&&y>=0&&y<N}
+  function finish(p){over=true;thinking=false;updateStatus(p===human?'你赢了！':'电脑赢了！')}
+  function afterMove(x,y,p){
+    if(won(x,y,p)){finish(p);return true} if(history.length===N*N){over=true;updateStatus('平局');return true} turn=3-p;updateStatus();return false;
+  }
+  function clickBoard(e){
+    if(over||thinking||turn!==human)return;const r=canvas.getBoundingClientRect(),x=Math.round((e.clientX-r.left-pad)/cell),y=Math.round((e.clientY-r.top-pad)/cell);
+    if(!inside(x,y)||board[y][x]!==EMPTY)return;place(x,y,human);if(!afterMove(x,y,human))setTimeout(aiMove,180);
+  }
+  function candidates(radius=2){
+    if(!history.length)return [{x:7,y:7}];const out=[];
+    for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(board[y][x]===EMPTY){let near=false;for(let dy=-radius;dy<=radius&&!near;dy++)for(let dx=-radius;dx<=radius;dx++)if(inside(x+dx,y+dy)&&board[y+dy][x+dx]!==EMPTY){near=true;break}if(near)out.push({x,y})}
+    return out;
+  }
+  function lineInfo(x,y,dx,dy,p){
+    let a=0,b=0;while(inside(x+(a+1)*dx,y+(a+1)*dy)&&board[y+(a+1)*dy][x+(a+1)*dx]===p)a++;while(inside(x-(b+1)*dx,y-(b+1)*dy)&&board[y-(b+1)*dy][x-(b+1)*dx]===p)b++;
+    const openA=inside(x+(a+1)*dx,y+(a+1)*dy)&&board[y+(a+1)*dy][x+(a+1)*dx]===EMPTY,openB=inside(x-(b+1)*dx,y-(b+1)*dy)&&board[y-(b+1)*dy][x-(b+1)*dx]===EMPTY;
+    return {len:a+b+1,open:Number(openA)+Number(openB)};
+  }
+  function shapeScore(len,open){
+    if(len>=5)return 1000000;if(len===4&&open===2)return 100000;if(len===4&&open===1)return 15000;if(len===3&&open===2)return 7000;if(len===3&&open===1)return 700;if(len===2&&open===2)return 300;if(len===2&&open===1)return 45;return open?8:1;
+  }
+  function pointScore(x,y,p){
+    board[y][x]=p;let score=0;for(const [dx,dy] of dirs){const q=lineInfo(x,y,dx,dy,p);score+=shapeScore(q.len,q.open)}board[y][x]=EMPTY;return score;
+  }
+  function rankMoves(){
+    return candidates().map(m=>{const attack=pointScore(m.x,m.y,ai),defend=pointScore(m.x,m.y,human);return {...m,attack,defend,score:attack+defend*.92+Math.random()*.01}}).sort((a,b)=>b.score-a.score);
+  }
+  function chooseMove(){
+    const ranked=rankMoves(),level=levelEl.value;
+    const win=ranked.find(m=>m.attack>=1000000);if(win)return win;const block=ranked.find(m=>m.defend>=1000000);if(block)return block;
+    if(level==='easy'){const pool=ranked.slice(0,Math.min(8,ranked.length));return pool[Math.floor(Math.random()*pool.length)]}
+    if(level==='normal')return ranked[0];
+    let best=ranked[0],bestValue=-Infinity;
+    for(const m of ranked.slice(0,10)){
+      board[m.y][m.x]=ai;let replyWorst=0;
+      const replies=candidates().map(r=>pointScore(r.x,r.y,human)+pointScore(r.x,r.y,ai)*.45).sort((a,b)=>b-a).slice(0,8);
+      if(replies.length)replyWorst=replies[0];board[m.y][m.x]=EMPTY;
+      const value=m.attack+m.defend*.98-replyWorst*.72+(7-Math.abs(7-m.x)+7-Math.abs(7-m.y))*.08;
+      if(value>bestValue){bestValue=value;best=m}
+    }return best;
+  }
+  function aiMove(){
+    if(over||turn!==ai)return;thinking=true;updateStatus();setTimeout(()=>{const m=chooseMove();if(!m)return;place(m.x,m.y,ai);thinking=false;afterMove(m.x,m.y,ai)},80);
+  }
+  function undo(){
+    if(thinking||!history.length)return;let n=history[history.length-1].p===human?1:2;while(n--&&history.length){const m=history.pop();board[m.y][m.x]=EMPTY}
+    over=false;turn=human;draw();updateStatus();
+  }
+  canvas.addEventListener('pointerup',clickBoard);restartBtn.addEventListener('click',reset);undoBtn.addEventListener('click',undo);levelEl.addEventListener('change',reset);colorEl.addEventListener('change',reset);window.addEventListener('resize',resize);
+  reset();resize();
+})();
+</script>
+</body>
+</html>

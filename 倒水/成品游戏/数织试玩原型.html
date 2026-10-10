@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数织 · 拼豆彩色版</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #e9e7de; color: #3a3832; }
+  #app { max-width: 720px; margin: 0 auto; padding: 12px; }
+  header { display: flex; align-items: center; gap: 8px; padding: 4px 2px 8px; }
+  header .title { font-size: 18px; font-weight: 700; letter-spacing: 1px; flex: 1; text-align: center; }
+  button { font-size: 14px; padding: 7px 14px; border: 1px solid #c4c0b2; border-radius: 8px;
+           background: #fff; color: #3a3832; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  button:hover:not(:disabled) { background: #f2f0e8; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  header .modebtn { font-size: 13px; padding: 6px 9px; white-space: nowrap; }
+  header .modebtn.on { background: #2f80ed; color: #fff; border-color: #2f80ed; }
+  #paletteBar { display: flex; align-items: center; gap: 8px; justify-content: center; padding: 4px 0 8px; }
+  #paletteBar .palLabel { font-size: 13px; color: #6b675c; }
+  #paletteBar .dot { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(0,0,0,.2);
+                     box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  #paletteBar .palName { font-size: 13px; color: #6b675c; margin-right: 10px; }
+  #boardCard { background: #fbfaf5; border-radius: 14px; padding: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.10); }
+  #boardWrap { display: flex; justify-content: center; }
+  #svg { display: block; width: min(640px, 96vw); height: auto; user-select: none; touch-action: none; }
+  .cell-rect { fill: #ffffff; stroke: #c9cdd6; stroke-width: 1; }
+  .cell-rect:hover { fill: #eef1f6; }
+  .cell-rect.filled { stroke: rgba(0,0,0,.35); stroke-width: 1.5; }
+  .cell-rect.hl { fill: #dde8f5; }
+  .cell-rect.filled.hl { filter: brightness(1.12); }
+  .cell-rect.err { stroke: #e53935 !important; stroke-width: 2.5 !important; }
+  .cell-rect.pop { animation: pop .18s ease; }
+  @keyframes pop { 0% { transform: scale(1); } 45% { transform: scale(1.16); } 100% { transform: scale(1); } }
+  .shade { fill: rgba(255,255,255,.3); pointer-events: none; }
+  .major-grid { stroke: #b3afa2; stroke-width: 2; }
+  .cross { stroke: #a09a90; stroke-width: 2.5; stroke-linecap: round; }
+  .clue { fill: #6b675c; font-weight: 600; paint-order: stroke; stroke: #fff; stroke-width: 2px; }
+  .clue.done { fill: #b9b5a9 !important; text-decoration: line-through; }
+  .clue.zero { fill: #c4c0b2; }
+  .board-bg { fill: #f3f1ea; stroke: #d9d5c8; }
+  footer { text-align: center; padding: 12px 0 26px; }
+  footer .stats { font-size: 16px; font-weight: 600; margin-bottom: 2px; }
+  footer .stats .num { color: #2f80ed; }
+  footer .bestline { font-size: 13px; color: #8a867b; min-height: 18px; margin-bottom: 2px; }
+  footer .hint { min-height: 22px; font-size: 14px; color: #6b675c; margin-bottom: 10px; }
+  footer .controls { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; align-items: center; }
+  footer .controls .sep { color: #c4c0b2; }
+  footer select { font-size: 14px; padding: 7px 10px; border: 1px solid #c4c0b2; border-radius: 8px; background: #fff; }
+  #win { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.48);
+         display: none; align-items: center; justify-content: center; z-index: 10; }
+  #win.show { display: flex; }
+  #win .box { background: #fff; border-radius: 16px; padding: 24px 34px; text-align: center;
+              box-shadow: 0 10px 40px rgba(0,0,0,.28); animation: popin .22s ease; }
+  @keyframes popin { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  #win .tick { font-size: 36px; line-height: 1; margin-bottom: 4px; }
+  #win h2 { margin: 0 0 2px; font-size: 22px; }
+  #win .stars { font-size: 24px; letter-spacing: 3px; margin: 2px 0; }
+  #win .pic { margin: 8px auto 6px; }
+  #win .pic svg { display: block; margin: 0 auto; }
+  #win .row { margin: 4px 0; font-size: 15px; }
+  #win .btns { margin-top: 14px; display: flex; gap: 10px; justify-content: center; }
+  #win .btns button { font-size: 15px; padding: 9px 20px; border: 1px solid #c4c0b2; border-radius: 8px; background: #fff; cursor: pointer; }
+  #win .btns button.primary { background: #2f80ed; color: #fff; border-color: #2f80ed; }
+  #hintHelp { font-size: 12px; color: #9a968b; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <button id="modeClassic" class="modebtn on">经典关卡</button>
+    <button id="modeDaily" class="modebtn">每日一题</button>
+    <button id="modeEndless" class="modebtn">无限挑战</button>
+    <span class="title" id="levelTitle">数织 · 第 1 关</span>
+    <button id="restart">↻ 重来</button>
+  </header>
+  <div id="paletteBar"></div>
+  <div id="boardCard">
+    <div id="boardWrap">
+      <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </div>
+  <footer>
+    <div class="stats">已涂 <span class="num" id="count">0 / 0</span>　失误 <span class="num" id="mistakes">0</span>　⏱ <span class="num" id="timeEl">0:00</span></div>
+    <div class="bestline">最佳 <span id="best">--</span></div>
+    <div class="hint" id="hint">根据外侧数字，推理并涂色，拼出隐藏图案。</div>
+    <div class="controls">
+      <button id="undo">↶ 撤销</button>
+      <button id="redo">↷ 重做</button>
+      <span class="sep">│</span>
+      <button id="check">🔍 检查</button>
+      <span class="sep">│</span>
+      <button id="prev">上一关</button>
+      <select id="levelSelect"></select>
+      <button id="next">下一关</button>
+    </div>
+    <div id="hintHelp">操作：左键/点击涂色，右键/长按打叉，按住拖动连续涂</div>
+  </footer>
+</div>
+<div id="win">
+  <div class="box">
+    <div class="tick">⭐</div>
+    <h2>图案还原！</h2>
+    <div class="stars" id="wStars"></div>
+    <div class="pic" id="wPic"></div>
+    <div class="row" id="wName"></div>
+    <div class="row">本次：<span id="wCur"></span> 格 · 失误 <span id="wMistakes"></span> · ⏱ <span id="wTime"></span></div>
+    <div class="row">最佳：<span id="wBest"></span></div>
+    <div class="btns">
+      <button id="wReplay">再拼一次</button>
+      <button class="primary" id="wNext">下一关</button>
+    </div>
+  </div>
+</div>
+<script>
+/* ============ 关卡数据（唯一解已验证，含多色） ============ */
+var LEVELS = [{"name":"爱心（入门）","rows":5,"cols":5,"palette":["#e53935"],"colorNames":["红"],"grid":[[0,1,0,1,0],[1,1,1,1,1],[1,1,1,1,1],[0,1,1,1,0],[0,0,1,0,0]]},{"name":"糖果","rows":5,"cols":5,"palette":["#ec407a"],"colorNames":["粉"],"grid":[[0,1,1,1,0],[1,1,0,1,1],[1,0,0,0,1],[1,1,0,1,1],[0,1,1,1,0]]},{"name":"星星","rows":7,"cols":7,"palette":["#fbc02d"],"colorNames":["黄"],"grid":[[0,0,0,1,0,0,0],[0,0,1,1,1,0,0],[0,1,1,1,1,1,0],[1,1,1,1,1,1,1],[0,1,1,1,1,1,0],[0,1,1,1,1,1,0],[0,0,1,1,1,0,0]]},{"name":"小鱼","rows":8,"cols":8,"palette":["#1e88e5"],"colorNames":["蓝"],"grid":[[0,0,0,0,1,1,0,0],[0,0,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1],[0,0,1,1,1,1,1,0],[0,0,0,0,1,1,1,0],[0,0,0,0,1,1,0,0],[0,0,0,0,0,0,0,0]]},{"name":"小猫脸","rows":8,"cols":8,"palette":["#fb8c00"],"colorNames":["橙"],"grid":[[0,0,1,1,1,1,0,0],[0,1,1,1,1,1,1,0],[1,1,0,1,1,0,1,1],[1,1,1,1,1,1,1,1],[0,1,1,1,1,1,1,0],[0,1,1,1,1,1,1,0],[0,0,1,1,1,1,0,0],[0,0,0,0,0,0,0,0]]},{"name":"蘑菇","rows":7,"cols":7,"palette":["#6d4c41"],"colorNames":["棕"],"grid":[[0,1,1,1,1,1,0],[1,1,1,1,1,1,1],[1,1,1,1,1,1,1],[0,1,1,1,1,1,0],[0,0,1,1,1,0,0],[0,0,1,1,1,0,0],[0,0,1,1,1,0,0]]},{"name":"太阳","rows":9,"cols":9,"palette":["#ff7043"],"colorNames":["橙红"],"grid":[[0,0,0,1,1,1,0,0,0],[0,0,1,1,1,1,1,0,0],[0,1,1,1,1,1,1,1,0],[0,1,1,1,1,1,1,1,0],[1,1,1,1,1,1,1,1,1],[0,1,1,1,1,1,1,1,0],[0,1,1,1,1,1,1,1,0],[0,0,1,1,1,1,1,0,0],[0,0,0,1,1,1,0,0,0]]},{"name":"大爱心（进阶）","rows":9,"cols":9,"palette":["#c62828"],"colorNames":["深红"],"grid":[[0,0,1,1,0,1,1,0,0],[0,1,1,1,1,1,1,1,0],[1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1],[0,1,1,1,1,1,1,1,0],[0,0,1,1,1,1,1,0,0],[0,0,0,1,1,1,0,0,0],[0,0,0,0,1,0,0,0,0],[0,0,0,0,0,0,0,0,0]]},{"name":"柠檬","rows":7,"cols":7,"palette":["#fdd835"],"colorNames":["黄"],"grid":[[0,0,1,1,1,0,0],[0,1,1,1,1,1,0],[1,1,1,1,1,1,1],[1,1,1,1,1,1,1],[1,1,1,1,1,1,1],[0,1,1,1,1,1,0],[0,0,1,1,1,0,0]]},{"name":"草莓","rows":9,"cols":9,"palette":["#e53935","#43a047"],"colorNames":["红","绿"],"grid":[[0,0,0,2,2,2,0,0,0],[0,0,2,2,2,2,2,0,0],[0,2,2,2,2,2,2,2,0],[2,2,2,2,2,2,2,2,2],[1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1],[0,1,1,1,1,1,1,1,0],[0,0,1,1,1,1,1,0,0]]},{"name":"西瓜","rows":11,"cols":11,"palette":["#e53935","#43a047","#263238"],"colorNames":["红","绿","黑"],"grid":[[0,0,2,2,2,2,2,2,2,0,0],[0,2,2,2,2,2,2,2,2,2,0],[2,2,1,1,1,1,1,1,1,2,2],[2,2,1,1,1,3,1,1,1,2,2],[2,2,1,1,1,1,1,1,1,2,2],[2,2,1,1,1,3,1,1,1,2,2],[2,2,1,1,1,1,1,1,1,2,2],[2,2,1,1,1,3,1,1,1,2,2],[2,2,1,1,1,1,1,1,1,2,2],[0,2,2,2,2,2,2,2,2,2,0],[0,0,2,2,2,2,2,2,2,0,0]]},{"name":"瓢虫","rows":9,"cols":9,"palette":["#e53935","#263238"],"colorNames":["红","黑"],"grid":[[0,0,2,2,2,2,2,0,0],[0,2,2,2,2,2,2,2,0],[2,2,1,1,2,1,1,2,2],[2,2,1,1,2,1,1,2,2],[2,2,2,2,2,2,2,2,2],[2,2,2,2,2,2,2,2,2],[2,2,2,2,2,2,2,2,2],[0,2,2,2,2,2,2,2,0],[0,0,2,2,2,2,2,0,0]]},{"name":"小黄鸭","rows":9,"cols":9,"palette":["#fdd835","#fb8c00"],"colorNames":["黄","橙"],"grid":[[0,0,1,1,1,1,0,0,0],[0,1,1,1,1,1,1,0,0],[1,1,1,1,1,1,1,1,0],[1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,2,2,2],[1,1,1,1,1,1,1,0,0],[0,1,1,1,1,1,1,0,0],[0,0,1,1,1,1,0,0,0],[0,0,0,1,1,0,0,0,0]]},{"name":"熊猫脸","rows":11,"cols":11,"palette":["#263238","#f5f5f5"],"colorNames":["黑","白"],"grid":[[0,0,1,1,1,1,1,1,1,0,0],[0,1,1,1,1,1,1,1,1,1,0],[1,1,1,1,1,1,1,1,1,1,1],[1,1,2,2,1,1,1,2,2,1,1],[1,1,2,2,1,1,1,2,2,1,1],[1,1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1,1],[0,1,1,2,2,2,2,2,1,1,0],[0,0,1,1,2,2,1,1,2,0,0],[0,0,1,1,1,1,1,1,1,0,0],[0,0,0,0,0,0,0,0,0,0,0]]},{"name":"彩虹","rows":7,"cols":13,"palette":["#e53935","#fb8c00","#fdd835","#43a047","#1e88e5"],"colorNames":["红","橙","黄","绿","蓝"],"grid":[[0,0,0,0,1,1,1,1,1,0,0,0,0],[0,0,0,2,2,2,2,2,2,2,0,0,0],[0,0,3,3,3,3,3,3,3,3,3,0,0],[0,4,4,4,4,4,4,4,4,4,4,4,0],[5,5,5,5,5,5,5,5,5,5,5,5,5],[0,4,4,4,4,4,4,4,4,4,4,4,0],[0,0,3,3,3,3,3,3,3,3,3,0,0]]},{"name":"雨伞","rows":10,"cols":10,"palette":["#e53935","#263238"],"colorNames":["红","黑"],"grid":[[0,0,1,1,1,1,1,1,0,0],[0,1,1,1,1,1,1,1,1,0],[1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1],[0,0,0,2,2,2,2,0,0,0],[0,0,0,2,2,2,2,0,0,0],[0,0,0,2,2,2,2,0,0,0],[0,0,0,2,2,2,2,0,0,0],[0,0,0,2,2,2,2,0,0,0],[0,0,0,2,2,2,2,0,0,0]]},{"name":"冰淇淋","rows":11,"cols":10,"palette":["#ec407a","#8d6e63"],"colorNames":["粉","棕"],"grid":[[0,0,0,1,1,1,1,0,0,0],[0,0,1,1,1,1,1,1,0,0],[0,1,1,1,1,1,1,1,1,0],[1,1,1,1,1,1,1,1,1,1],[1,1,1,1,1,1,1,1,1,1],[2,2,2,2,2,2,2,2,2,2],[2,2,2,2,2,2,2,2,2,2],[0,2,2,2,2,2,2,2,2,0],[0,2,2,2,2,2,2,2,2,0],[0,0,2,2,2,2,2,2,0,0],[0,0,0,2,2,2,2,0,0,0]]},{"name":"火箭","rows":13,"cols":12,"palette":["#f5f5f5","#e53935","#90a4ae","#fb8c00"],"colorNames":["白","红","灰","橙"],"grid":[[0,0,0,0,1,1,1,1,0,0,0,0],[0,0,0,1,2,2,2,2,1,0,0,0],[0,0,0,1,2,2,2,2,1,0,0,0],[0,0,0,1,2,2,2,2,1,0,0,0],[0,0,0,1,3,3,3,3,1,0,0,0],[0,0,1,3,3,3,3,3,3,1,0,0],[0,0,1,3,3,3,3,3,3,1,0,0],[0,0,1,3,3,3,3,3,3,1,0,0],[0,0,1,3,3,1,1,1,3,1,0,0],[0,0,1,3,3,1,1,1,3,1,0,0],[0,0,0,1,1,1,1,1,1,0,0,0],[0,0,0,1,4,4,4,4,1,0,0,0],[0,0,0,1,4,4,4,4,1,0,0,0]]},{"name":"圣诞树","rows":13,"cols":11,"palette":["#43a047","#6d4c41","#fdd835"],"colorNames":["绿","棕","黄"],"grid":[[0,0,0,0,0,3,0,0,0,0,0],[0,0,0,0,3,3,3,0,0,0,0],[0,0,0,0,0,3,0,0,0,0,0],[0,0,0,1,1,1,1,1,0,0,0],[0,0,1,1,1,1,1,1,1,0,0],[0,1,1,1,1,1,1,1,1,1,0],[1,1,1,1,1,1,1,1,1,1,1],[0,1,1,1,1,1,1,1,1,1,0],[0,0,1,1,1,1,1,1,1,0,0],[0,0,0,1,1,1,1,1,0,0,0],[0,0,0,0,1,1,1,0,0,0,0],[0,0,0,0,2,2,2,0,0,0,0],[0,0,0,0,2,2,2,0,0,0,0]]},{"name":"笑脸","rows":9,"cols":9,"palette":["#fdd835","#263238"],"colorNames":["黄","黑"],"grid":[[0,0,1,1,1,1,1,0,0],[0,1,1,1,1,1,1,1,0],[1,1,1,1,1,1,1,1,1],[1,1,2,2,1,1,2,2,1],[1,1,2,2,1,1,2,2,1],[1,1,1,1,1,1,1,1,1],[1,1,2,2,2,2,2,1,1],[0,1,2,2,2,2,2,1,0],[0,0,1,1,1,1,1,0,0]]}];
+
+/* ============ 预设调色板（随机生成用） ============ */
+var PRESET_PALETTES = {
+  1: ['#2f80ed'],
+  2: ['#e53935', '#43a047'],
+  3: ['#e53935', '#fdd835', '#1e88e5'],
+  4: ['#e53935', '#fb8c00', '#43a047', '#1e88e5']
+};
+var PRESET_NAMES = {
+  1: ['蓝'], 2: ['红', '绿'], 3: ['红', '黄', '蓝'], 4: ['红', '橙', '绿', '蓝']
+};
+
+/* ============ 伪随机（无依赖） ============ */
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function hashStr(s) {
+  var h = 2166136261 >>> 0;
+  for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+/* ============ 纯逻辑（可独立测试） ============ */
+/* 彩色线索：连续同色块 -> [[color, len], ...]；空行 -> [] */
+function runsOf(row) {
+  var out = [], i = 0, n = row.length;
+  while (i < n) {
+    if (row[i] === 0) { i++; continue; }
+    var c = row[i], j = i;
+    while (j < n && row[j] === c) j++;
+    out.push([c, j - i]);
+    i = j;
+  }
+  return out;
+}
+function rowRuns(lv) { var a = []; for (var r = 0; r < lv.rows; r++) a.push(runsOf(lv.grid[r])); return a; }
+function colRuns(lv) {
+  var a = [];
+  for (var c = 0; c < lv.cols; c++) {
+    var col = [];
+    for (var r = 0; r < lv.rows; r++) col.push(lv.grid[r][c]);
+    a.push(runsOf(col));
+  }
+  return a;
+}
+function key(r, c) { return r + ',' + c; }
+
+/* cells[k]：数字=涂该颜色，'x'=打叉，undefined=空 */
+function isComplete(lv, cells) {
+  var r, c;
+  for (r = 0; r < lv.rows; r++) {
+    for (c = 0; c < lv.cols; c++) {
+      var want = lv.grid[r][c], have = cells[key(r, c)];
+      var filled = (typeof have === 'number');
+      if ((want > 0) !== filled) return false;
+      if (want > 0 && have !== want) return false;
+    }
+  }
+  return true;
+}
+function lineDone(lv, cells, isRow, idx) {
+  var i, want, have, filled, r, c;
+  for (i = 0; i < (isRow ? lv.cols : lv.rows); i++) {
+    r = isRow ? idx : i; c = isRow ? i : idx;
+    want = lv.grid[r][c]; have = cells[key(r, c)];
+    filled = (typeof have === 'number');
+    if ((want > 0) !== filled) return false;
+    if (want > 0 && have !== want) return false;
+  }
+  return true;
+}
+
+/* 枚举长度为 L、满足彩色线索 runs 的所有着色 */
+function lineMasks(L, runs) {
+  if (!runs.length) return [new Array(L).fill(0)];
+  var k = runs.length, i, totalBlack = 0;
+  for (i = 0; i < k; i++) totalBlack += runs[i][1];
+  var baseBetween = [];
+  for (i = 0; i < k - 1; i++) baseBetween.push(runs[i][0] === runs[i + 1][0] ? 1 : 0);
+  var minLen = totalBlack;
+  for (i = 0; i < baseBetween.length; i++) minLen += baseBetween[i];
+  var free = L - minLen;
+  if (free < 0) return [];
+  var res = [], gaps = new Array(k + 1).fill(0);
+  (function rec(pos, remain) {
+    if (pos === k) {
+      gaps[k] = remain;
+      var row = new Array(gaps[0]).fill(0), j, t;
+      for (j = 0; j < k; j++) {
+        for (t = 0; t < runs[j][1]; t++) row.push(runs[j][0]);
+        if (j < k - 1) { var g = baseBetween[j] + gaps[j + 1]; for (t = 0; t < g; t++) row.push(0); }
+      }
+      for (t = 0; t < gaps[k]; t++) row.push(0);
+      res.push(row);
+      return;
+    }
+    for (var v = 0; v <= remain; v++) { gaps[pos] = v; rec(pos + 1, remain - v); }
+  })(0, free);
+  return res;
+}
+
+/* 统计满足全部行/列线索的解数（>1 即非唯一），用于随机生成的唯一解校验 */
+function countSolutions(grid, maxColors) {
+  var R = grid.length, C = grid[0].length, base = maxColors + 1, r, c;
+  var rowR = [], colR = [];
+  for (r = 0; r < R; r++) rowR.push(runsOf(grid[r]));
+  for (c = 0; c < C; c++) { var col = []; for (r = 0; r < R; r++) col.push(grid[r][c]); colR.push(runsOf(col)); }
+  var rowMasks = rowR.map(function (rr) { return lineMasks(C, rr); });
+  var colMasks = colR.map(function (cr) { return lineMasks(R, cr); });
+  var colPf = [];
+  for (c = 0; c < C; c++) {
+    var s = new Set();
+    colMasks[c].forEach(function (m) { var cur = 0; m.forEach(function (b) { cur = cur * base + b; s.add(cur); }); });
+    colPf.push(s);
+  }
+  var cnt = 0;
+  (function dfs(rr, prefix) {
+    if (cnt > 1) return;
+    if (rr === R) { cnt++; return; }
+    var masks = rowMasks[rr];
+    for (var mi = 0; mi < masks.length; mi++) {
+      var m = masks[mi], ok = true, np = [];
+      for (c = 0; c < C; c++) {
+        var v = prefix[c] * base + m[c]; np.push(v);
+        if (!colPf[c].has(v)) { ok = false; break; }
+      }
+      if (ok) dfs(rr + 1, np);
+      if (cnt > 1) return;
+    }
+  })(0, new Array(C).fill(0));
+  return cnt;
+}
+
+/* ============ 随机生成器 ============ */
+function generateLevel(rows, cols, colors, rng) {
+  var half = Math.ceil(cols / 2), a, r, c;
+  for (a = 0; a < 150; a++) {
+    var grid = [];
+    for (r = 0; r < rows; r++) {
+      var row = new Array(cols).fill(0);
+      for (c = 0; c < half; c++) {
+        var v = (rng() < 0.5) ? (1 + Math.floor(rng() * colors)) : 0;
+        row[c] = v; row[cols - 1 - c] = v;
+      }
+      grid.push(row);
+    }
+    var filled = 0;
+    for (r = 0; r < rows; r++) for (c = 0; c < cols; c++) if (grid[r][c]) filled++;
+    if (filled < rows * cols * 0.15 || filled > rows * cols * 0.85) continue;
+    if (countSolutions(grid, colors) === 1) {
+      return { name: '', rows: rows, cols: cols, palette: PRESET_PALETTES[colors].slice(),
+               colorNames: PRESET_NAMES[colors].slice(), grid: grid, generated: true };
+    }
+  }
+  return null;
+}
+function endlessConfig(i) {
+  if (i < 5) return { rows: 5, cols: 5, colors: 1 };
+  if (i < 10) return { rows: 7, cols: 7, colors: 1 };
+  if (i < 15) return { rows: 7, cols: 7, colors: 2 };
+  if (i < 20) return { rows: 9, cols: 9, colors: 2 };
+  if (i < 30) return { rows: 9, cols: 9, colors: 3 };
+  return { rows: 10, cols: 10, colors: 3 };
+}
+function fallbackLevel() {
+  return { name: '', rows: 5, cols: 5, palette: ['#2f80ed'], colorNames: ['蓝'],
+           grid: [[0,1,1,1,0],[1,1,1,1,1],[1,1,1,1,1],[0,1,1,1,0],[0,0,1,0,0]], generated: true };
+}
+function genOrFallback(rows, cols, colors, rng) {
+  return generateLevel(rows, cols, colors, rng) || fallbackLevel();
+}
+
+/* ============ 界面状态 ============ */
+var mode = 'classic';
+var cur = 0;
+var endlessIndex = 0;
+var genCache = {};
+var cells = {};
+var count = 0, total = 0, mistakes = 0;
+var undoStack = [], redoStack = [];
+var lock = false, winShown = false, idleTimer = null;
+var startMs = 0, timerId = null, elapsedSec = 0;
+var unlocked = 1;
+var saveData = null;
+
+var svgRoot = document.getElementById('svg');
+var countEl = document.getElementById('count');
+var mistakesEl = document.getElementById('mistakes');
+var timeEl = document.getElementById('timeEl');
+var bestEl = document.getElementById('best');
+var hintEl = document.getElementById('hint');
+var titleEl = document.getElementById('levelTitle');
+var winEl = document.getElementById('win');
+var selEl = document.getElementById('levelSelect');
+var prevBtn = document.getElementById('prev');
+var nextBtn = document.getElementById('next');
+
+function todayStr() {
+  var d = new Date();
+  return d.getFullYear() + '-' + (d.getMonth() + 1 < 10 ? '0' : '') + (d.getMonth() + 1) + '-' + (d.getDate() < 10 ? '0' : '') + d.getDate();
+}
+function bestKey() {
+  if (mode === 'classic') return cur;
+  if (mode === 'daily') return 'd' + todayStr();
+  return 'e' + endlessIndex;
+}
+function currentLevel() {
+  if (mode === 'classic') return LEVELS[cur];
+  if (mode === 'daily') {
+    var ds = todayStr(), k = 'd' + ds;
+    if (!genCache[k]) genCache[k] = genOrFallback(10, 10, 2, mulberry32(hashStr('shuzhi-daily-' + ds)));
+    return genCache[k];
+  }
+  var cfg = endlessConfig(endlessIndex), kk = 'e' + endlessIndex;
+  if (!genCache[kk]) genCache[kk] = genOrFallback(cfg.rows, cfg.cols, cfg.colors, mulberry32(hashStr('shuzhi-endless-' + endlessIndex)));
+  return genCache[kk];
+}
+function loadSave() {
+  try { saveData = JSON.parse(localStorage.getItem('shuzhi_save') || '{}'); }
+  catch (e) { saveData = {}; }
+  if (!saveData || typeof saveData !== 'object') saveData = {};
+  if (!saveData.best || typeof saveData.best !== 'object') saveData.best = {};
+  for (var k in saveData.best) {
+    var v = saveData.best[k];
+    if (!v || typeof v !== 'object' || typeof v.m !== 'number' || typeof v.t !== 'number' || typeof v.s !== 'number') delete saveData.best[k];
+  }
+  unlocked = (typeof saveData.unlocked === 'number' && saveData.unlocked >= 1) ? saveData.unlocked : 1;
+}
+function persist() { try { localStorage.setItem('shuzhi_save', JSON.stringify(saveData)); } catch (e) {} }
+function fmtTime(s) { var m = Math.floor(s / 60), ss = s % 60; return m + ':' + (ss < 10 ? '0' : '') + ss; }
+function getBest() {
+  var b = saveData.best[bestKey()];
+  if (b && typeof b === 'object' && typeof b.m === 'number' && typeof b.t === 'number' && typeof b.s === 'number') return b;
+  return null;
+}
+function showBest() {
+  var b = getBest();
+  bestEl.textContent = b ? ('⭐' + b.s + ' · 失误 ' + b.m + ' · ' + fmtTime(b.t)) : '--';
+}
+
+function startTimer() {
+  stopTimer();
+  startMs = Date.now(); elapsedSec = 0;
+  timeEl.textContent = '0:00';
+  timerId = setInterval(function () {
+    elapsedSec = Math.floor((Date.now() - startMs) / 1000);
+    timeEl.textContent = fmtTime(elapsedSec);
+  }, 500);
+}
+function stopTimer() { if (timerId) { clearInterval(timerId); timerId = null; } }
+
+function levelTitle() {
+  if (mode === 'classic') return '数织 · 第 ' + (cur + 1) + ' 关';
+  if (mode === 'daily') return '数织 · 每日挑战 ' + todayStr();
+  return '数织 · 无尽 第 ' + (endlessIndex + 1) + ' 题';
+}
+
+function loadLevel() {
+  var lv = currentLevel();
+  cells = {};
+  count = 0; mistakes = 0; undoStack = []; redoStack = []; lock = false; winShown = false;
+  total = 0;
+  for (var rr = 0; rr < lv.rows; rr++) for (var cc = 0; cc < lv.cols; cc++) if (lv.grid[rr][cc]) total++;
+  winEl.classList.remove('show');
+  titleEl.textContent = levelTitle();
+  selEl.value = String(cur + 1);
+  countEl.textContent = '0 / ' + total;
+  mistakesEl.textContent = '0';
+  hintEl.textContent = '根据外侧数字，推理并涂色，拼出隐藏图案。';
+  renderPalette();
+  showBest();
+  renderBoard();
+  updateNav();
+  startTimer();
+  resetIdle();
+}
+
+function svgEl(name, attrs) {
+  var el = document.createElementNS('http://www.w3.org/2000/svg', name);
+  for (var k in attrs) if (attrs.hasOwnProperty(k)) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+function boardGeom() {
+  var lv = currentLevel();
+  var cell = Math.min(44, 400 / Math.max(lv.rows, lv.cols));
+  var rr = rowRuns(lv), cr = colRuns(lv);
+  var maxRow = 0, maxCol = 0, i;
+  for (i = 0; i < rr.length; i++) maxRow = Math.max(maxRow, rr[i].length);
+  for (i = 0; i < cr.length; i++) maxCol = Math.max(maxCol, cr[i].length);
+  var rowHintW = maxRow * cell * 0.72 + 22;
+  var colHintH = maxCol * cell * 0.52 + 22;
+  return { cell: cell, rowHintW: rowHintW, colHintH: colHintH,
+           W: rowHintW + lv.cols * cell, H: colHintH + lv.rows * cell };
+}
+
+function renderBoard() {
+  var lv = currentLevel();
+  var g = boardGeom();
+  svgRoot.setAttribute('viewBox', '0 0 ' + g.W + ' ' + g.H);
+  svgRoot.setAttribute('width', g.W); svgRoot.setAttribute('height', g.H);
+  svgRoot.innerHTML = '';
+  svgRoot.appendChild(svgEl('rect', { 'class': 'board-bg', x: g.rowHintW, y: g.colHintH,
+                                      width: lv.cols * g.cell, height: lv.rows * g.cell, rx: 5 }));
+  var rr = rowRuns(lv), cr = colRuns(lv), r, c, i, t;
+  /* 行提示（左） */
+  for (r = 0; r < lv.rows; r++) {
+    var runs = rr[r], y = g.colHintH + r * g.cell + g.cell / 2;
+    if (!runs.length) {
+      t = svgEl('text', { 'class': 'clue zero row-clue', 'data-r': r, x: g.rowHintW - 8, y: y + g.cell * 0.16, 'font-size': g.cell * 0.46 + 'px', 'text-anchor': 'end' });
+      t.textContent = '0'; svgRoot.appendChild(t); continue;
+    }
+    var x = g.rowHintW - 8;
+    for (i = runs.length - 1; i >= 0; i--) {
+      t = svgEl('text', { 'class': 'clue row-clue', 'data-r': r, x: x, y: y + g.cell * 0.16, 'font-size': g.cell * 0.46 + 'px', 'text-anchor': 'end', fill: lv.palette[runs[i][0] - 1] });
+      t.textContent = String(runs[i][1]); svgRoot.appendChild(t);
+      x -= g.cell * 0.72;
+    }
+  }
+  /* 列提示（顶） */
+  for (c = 0; c < lv.cols; c++) {
+    var runs2 = cr[c], x1 = g.rowHintW + c * g.cell + g.cell / 2;
+    if (!runs2.length) {
+      t = svgEl('text', { 'class': 'clue zero col-clue', 'data-c': c, x: x1, y: g.colHintH - 8, 'font-size': g.cell * 0.46 + 'px', 'text-anchor': 'middle' });
+      t.textContent = '0'; svgRoot.appendChild(t); continue;
+    }
+    var y0 = g.colHintH - 8;
+    for (i = runs2.length - 1; i >= 0; i--) {
+      t = svgEl('text', { 'class': 'clue col-clue', 'data-c': c, x: x1, y: y0, 'font-size': g.cell * 0.46 + 'px', 'text-anchor': 'middle', fill: lv.palette[runs2[i][0] - 1] });
+      t.textContent = String(runs2[i][1]); svgRoot.appendChild(t);
+      y0 -= g.cell * 0.52;
+    }
+  }
+  /* 网格 */
+  for (r = 0; r < lv.rows; r++) {
+    for (c = 0; c < lv.cols; c++) {
+      var x = g.rowHintW + c * g.cell, y = g.colHintH + r * g.cell;
+      var grp = svgEl('g', { 'class': 'cell', 'data-key': key(r, c), 'data-r': r, 'data-c': c });
+      grp.appendChild(svgEl('rect', { 'class': 'cell-rect', x: x, y: y, width: g.cell, height: g.cell, rx: 2 }));
+      grp.addEventListener('pointerdown', (function (rr, cc) { return function (e) { onDown(rr, cc, e); }; })(r, c));
+      grp.addEventListener('pointerenter', (function (rr, cc) { return function (e) { onEnter(rr, cc, e); }; })(r, c));
+      grp.addEventListener('contextmenu', (function (rr, cc) { return function (e) { e.preventDefault(); }; })(r, c));
+      grp.addEventListener('mouseenter', (function (rr, cc) { return function () { hoverCells(rr, cc, true); }; })(r, c));
+      grp.addEventListener('mouseleave', (function (rr, cc) { return function () { hoverCells(rr, cc, false); }; })(r, c));
+      svgRoot.appendChild(grp);
+    }
+  }
+  /* 每 5 格加粗分隔线 */
+  for (c = 5; c < lv.cols; c += 5) {
+    var gx = g.rowHintW + c * g.cell;
+    svgRoot.appendChild(svgEl('line', { 'class': 'major-grid', x1: gx, y1: g.colHintH, x2: gx, y2: g.colHintH + lv.rows * g.cell }));
+  }
+  for (r = 5; r < lv.rows; r += 5) {
+    var gy = g.colHintH + r * g.cell;
+    svgRoot.appendChild(svgEl('line', { 'class': 'major-grid', x1: g.rowHintW, y1: gy, x2: g.rowHintW + lv.cols * g.cell, y2: gy }));
+  }
+}
+
+function hoverCells(r, c, on) {
+  var rects = svgRoot.querySelectorAll('.cell-rect');
+  for (var i = 0; i < rects.length; i++) {
+    var grp = rects[i].parentNode;
+    var rr = parseInt(grp.getAttribute('data-r'), 10);
+    var cc = parseInt(grp.getAttribute('data-c'), 10);
+    if (rr === r || cc === c) {
+      if (on) rects[i].classList.add('hl'); else rects[i].classList.remove('hl');
+    }
+  }
+}
+
+function refreshCell(r, c) {
+  var lv = currentLevel();
+  var g = boardGeom();
+  var grp = svgRoot.querySelector('.cell[data-key="' + key(r, c) + '"]');
+  if (!grp) return;
+  var x = g.rowHintW + c * g.cell, y = g.colHintH + r * g.cell;
+  grp.innerHTML = '';
+  var rect = svgEl('rect', { 'class': 'cell-rect', x: x, y: y, width: g.cell, height: g.cell, rx: 2 });
+  var st = cells[key(r, c)];
+  if (typeof st === 'number') {
+    rect.classList.add('filled'); rect.classList.add('pop');
+    rect.style.fill = lv.palette[st - 1];
+    grp.appendChild(rect);
+    grp.appendChild(svgEl('rect', { 'class': 'shade', x: x + g.cell * 0.18, y: y + g.cell * 0.12,
+                                    width: g.cell * 0.64, height: g.cell * 0.24, rx: g.cell * 0.1 }));
+  } else {
+    grp.appendChild(rect);
+    if (st === 'x') {
+      var d = g.cell * 0.24;
+      grp.appendChild(svgEl('line', { 'class': 'cross', x1: x + g.cell / 2 - d, y1: y + g.cell / 2 - d, x2: x + g.cell / 2 + d, y2: y + g.cell / 2 + d }));
+      grp.appendChild(svgEl('line', { 'class': 'cross', x1: x + g.cell / 2 - d, y1: y + g.cell / 2 + d, x2: x + g.cell / 2 + d, y2: y + g.cell / 2 - d }));
+    }
+  }
+}
+
+/* ---- 涂色 / 打叉（含拖拽与长按） ---- */
+var paintMode = null;      // 'fill' | 'cross' | null
+var longPressTimer = null;
+var touchCell = null;      // 触屏短按待涂的格子
+var lastPaintCell = null;  // 防止重绘触发 pointerenter 重复涂同一格
+
+function onDown(r, c, e) {
+  if (lock || winShown) return;
+  e.preventDefault();
+  if (e.pointerType === 'touch') {
+    paintMode = null;
+    touchCell = [r, c];
+    longPressTimer = setTimeout(function () {
+      longPressTimer = null;
+      touchCell = null;
+      paintMode = 'cross';
+      lastPaintCell = key(r, c);
+      onCell(r, c, 'cross');
+    }, 400);
+    return;
+  }
+  var act = (e.button === 2) ? 'cross' : 'fill';
+  paintMode = act;
+  lastPaintCell = key(r, c);
+  onCell(r, c, act);
+}
+function onEnter(r, c, e) {
+  if (lock || winShown) return;
+  if (!paintMode) return;
+  var k = key(r, c);
+  if (k === lastPaintCell) return;   // 已是刚涂过的格子，跳过（避免重复触发取消）
+  lastPaintCell = k;
+  onCell(r, c, paintMode);
+}
+function onUp() {
+  if (touchCell && longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; onCell(touchCell[0], touchCell[1], 'fill'); touchCell = null; }
+  paintMode = null;
+  lastPaintCell = null;
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+}
+window.addEventListener('pointerup', onUp);
+window.addEventListener('pointercancel', onUp);
+window.addEventListener('pointerleave', onUp);
+window.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+function onCell(r, c, mode) {
+  if (lock || winShown) return;
+  var lv = currentLevel();
+  var k = key(r, c);
+  var prev = cells[k];
+  var next;
+  if (mode === 'fill') {
+    if (typeof prev === 'number') {
+      next = undefined;
+    } else if (lv.grid[r][c] > 0) {
+      next = lv.grid[r][c];
+    } else {
+      return;   // 点错：完全不动，不闪烁
+    }
+  } else {
+    next = (prev === 'x') ? undefined : 'x';
+  }
+  cells[k] = next;
+  if (typeof next === 'number') { if (typeof prev !== 'number') { count++; countEl.textContent = count + ' / ' + total; } }
+  else if (typeof prev === 'number') { count--; countEl.textContent = count + ' / ' + total; }
+  undoStack.push({ k: k, prev: prev, next: next, mDelta: 0 });
+  redoStack.length = 0;
+  refreshCell(r, c);
+  updateClues();
+  if (count === 1 && !prev) hintEl.textContent = '提示数字变灰划线，说明这一行/列已经拼对了。';
+  resetIdle();
+  if (isComplete(lv, cells)) finish();
+}
+
+function updateClues() {
+  var lv = currentLevel(), r, c, i;
+  var cls = svgRoot.querySelectorAll('.row-clue');
+  for (i = 0; i < cls.length; i++) {
+    r = parseInt(cls[i].getAttribute('data-r'), 10);
+    if (lineDone(lv, cells, true, r)) cls[i].classList.add('done'); else cls[i].classList.remove('done');
+  }
+  cls = svgRoot.querySelectorAll('.col-clue');
+  for (i = 0; i < cls.length; i++) {
+    c = parseInt(cls[i].getAttribute('data-c'), 10);
+    if (lineDone(lv, cells, false, c)) cls[i].classList.add('done'); else cls[i].classList.remove('done');
+  }
+}
+
+function flashErrors() {
+  if (lock || winShown) return;
+  var lv = currentLevel();
+  var els = svgRoot.querySelectorAll('.cell-rect');
+  var hit = 0;
+  for (var i = 0; i < els.length; i++) {
+    var grp = els[i].parentNode;
+    var rr = parseInt(grp.getAttribute('data-r'), 10), cc = parseInt(grp.getAttribute('data-c'), 10);
+    var st = cells[key(rr, cc)];
+    if (typeof st === 'number' && lv.grid[rr][cc] !== st) { els[i].classList.add('err'); hit++; }
+  }
+  if (hit) hintEl.textContent = '发现 ' + hit + ' 处错误（红框），再点取消即可。';
+  else hintEl.textContent = '没有错误，继续加油！';
+  setTimeout(function () {
+    var all = svgRoot.querySelectorAll('.cell-rect.err');
+    for (var j = 0; j < all.length; j++) all[j].classList.remove('err');
+  }, 1600);
+  resetIdle();
+}
+
+function finish() {
+  lock = true;
+  stopTimer();
+  var lv = currentLevel();
+  var cellsToLight = [], r, c;
+  for (r = 0; r < lv.rows; r++)
+    for (c = 0; c < lv.cols; c++)
+      if (lv.grid[r][c]) cellsToLight.push([r, c]);
+  var step = Math.min(30, Math.round(400 / cellsToLight.length));
+  for (var i = 0; i < cellsToLight.length; i++) {
+    (function (rr, cc, idx) {
+      setTimeout(function () {
+        var seg = svgRoot.querySelector('.cell[data-key="' + key(rr, cc) + '"]');
+        if (seg) {
+          var rc = seg.querySelector('.cell-rect');
+          if (rc) { rc.classList.remove('pop'); void rc.offsetWidth; rc.classList.add('pop'); }
+        }
+        if (idx === cellsToLight.length - 1) showWin();
+      }, step * (idx + 1));
+    })(cellsToLight[i][0], cellsToLight[i][1], i);
+  }
+}
+
+function calcStars(lv) {
+  var s = 3;
+  if (mistakes > 0) s--;
+  if (elapsedSec > lv.rows * lv.cols) s--;
+  return Math.max(1, s);
+}
+function showWin() {
+  winShown = true;
+  var lv = currentLevel();
+  var stars = calcStars(lv);
+  var b = getBest();
+  var improved = false;
+  if (!b || mistakes < b.m || (mistakes === b.m && elapsedSec < b.t)) {
+    improved = true;
+    saveData.best[bestKey()] = { m: mistakes, t: elapsedSec, s: stars };
+    persist();
+  }
+  document.getElementById('wStars').textContent = '⭐'.repeat(stars);
+  document.getElementById('wName').textContent = '图案：' + (lv.name || (mode === 'daily' ? '每日挑战' : '随机生成'));
+  document.getElementById('wCur').textContent = String(count);
+  document.getElementById('wMistakes').textContent = String(mistakes);
+  document.getElementById('wTime').textContent = fmtTime(elapsedSec);
+  var bb = getBest();
+  document.getElementById('wBest').textContent = bb ? ('⭐' + bb.s + ' · 失误 ' + bb.m + ' · ' + fmtTime(bb.t)) : '--';
+  showBest();
+  var wNext = document.getElementById('wNext');
+  if (mode === 'daily') { wNext.style.display = 'none'; }
+  else { wNext.style.display = ''; wNext.textContent = (mode === 'classic' ? '下一关' : '下一题'); }
+  if (mode === 'classic' && cur + 1 >= LEVELS.length) wNext.style.display = 'none';
+  winEl.classList.add('show');
+  drawWinPic();
+  if (mode === 'classic' && cur + 1 >= unlocked) {
+    unlocked = cur + 2; saveData.unlocked = unlocked; persist(); updateNav();
+  }
+}
+
+/* 通关：彩色成品缩略图 */
+function drawWinPic() {
+  var lv = currentLevel();
+  var pic = document.getElementById('wPic');
+  pic.innerHTML = '';
+  var size = 14;
+  var W = lv.cols * size, H = lv.rows * size;
+  var svg = svgEl('svg', { viewBox: '0 0 ' + W + ' ' + H, width: W, height: H });
+  for (var r = 0; r < lv.rows; r++) {
+    for (var c = 0; c < lv.cols; c++) {
+      var v = lv.grid[r][c];
+      if (v) svg.appendChild(svgEl('rect', { x: c * size, y: r * size, width: size, height: size, fill: lv.palette[v - 1] }));
+    }
+  }
+  pic.appendChild(svg);
+}
+
+function onUndo() {
+  if (lock || winShown || !undoStack.length) return;
+  var u = undoStack.pop();
+  var st = cells[u.k];
+  if (typeof st === 'number') count--;
+  if (typeof u.prev === 'number') count++;
+  countEl.textContent = count + ' / ' + total;
+  mistakes -= u.mDelta;
+  mistakesEl.textContent = String(mistakes);
+  cells[u.k] = u.prev;
+  redoStack.push(u);
+  var parts = u.k.split(',');
+  refreshCell(parseInt(parts[0], 10), parseInt(parts[1], 10));
+  updateClues();
+  resetIdle();
+}
+function onRedo() {
+  if (lock || winShown || !redoStack.length) return;
+  var u = redoStack.pop();
+  var st = cells[u.k];
+  if (typeof st === 'number') count--;
+  if (typeof u.next === 'number') count++;
+  countEl.textContent = count + ' / ' + total;
+  mistakes += u.mDelta;
+  mistakesEl.textContent = String(mistakes);
+  cells[u.k] = u.next;
+  undoStack.push(u);
+  var parts = u.k.split(',');
+  refreshCell(parseInt(parts[0], 10), parseInt(parts[1], 10));
+  updateClues();
+  resetIdle();
+}
+
+function updateNav() {
+  var isClassic = (mode === 'classic');
+  if (mode === 'daily') { prevBtn.style.display = 'none'; nextBtn.style.display = 'none'; selEl.style.display = 'none'; return; }
+  prevBtn.style.display = ''; nextBtn.style.display = '';
+  if (isClassic) {
+    selEl.style.display = '';
+    prevBtn.textContent = '上一关'; nextBtn.textContent = '下一关';
+    prevBtn.disabled = (cur === 0);
+    nextBtn.disabled = (cur + 1 >= unlocked) || (cur + 1 >= LEVELS.length);
+    var opts = selEl.options, i;
+    for (i = 0; i < opts.length; i++) {
+      opts[i].textContent = '第 ' + (i + 1) + ' 关「' + LEVELS[i].name + '」' + (i + 1 <= unlocked ? '' : '（未解锁）');
+    }
+    selEl.value = String(cur + 1);
+  } else {
+    selEl.style.display = 'none';
+    prevBtn.textContent = '上一题'; nextBtn.textContent = '下一题';
+    prevBtn.disabled = (endlessIndex === 0);
+    nextBtn.disabled = false;
+  }
+}
+
+function resetIdle() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(function () {
+    if (!winShown) hintEl.textContent = '数字表示连续同色段，同色段间至少空一格，不同色可紧挨。';
+  }, 20000);
+}
+
+function renderPalette() {
+  var lv = currentLevel();
+  var bar = document.getElementById('paletteBar');
+  bar.innerHTML = '';
+  if (lv.palette.length <= 1) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  var label = document.createElement('span');
+  label.className = 'palLabel'; label.textContent = '颜色：';
+  bar.appendChild(label);
+  for (var i = 0; i < lv.palette.length; i++) {
+    var d = document.createElement('span');
+    d.className = 'dot'; d.style.background = lv.palette[i];
+    bar.appendChild(d);
+    var nm = document.createElement('span');
+    nm.className = 'palName'; nm.textContent = lv.colorNames[i];
+    bar.appendChild(nm);
+  }
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('modeClassic').classList.toggle('on', m === 'classic');
+  document.getElementById('modeDaily').classList.toggle('on', m === 'daily');
+  document.getElementById('modeEndless').classList.toggle('on', m === 'endless');
+  if (m === 'classic') cur = 0;
+  else if (m === 'endless') endlessIndex = 0;
+  loadLevel();
+}
+
+(function fillSelect() {
+  for (var i = 1; i <= LEVELS.length; i++) {
+    var o = document.createElement('option');
+    o.value = String(i);
+    selEl.appendChild(o);
+  }
+})();
+
+document.getElementById('restart').addEventListener('click', function () { loadLevel(); });
+document.getElementById('undo').addEventListener('click', onUndo);
+document.getElementById('redo').addEventListener('click', onRedo);
+document.getElementById('check').addEventListener('click', flashErrors);
+document.getElementById('modeClassic').addEventListener('click', function () { setMode('classic'); });
+document.getElementById('modeDaily').addEventListener('click', function () { setMode('daily'); });
+document.getElementById('modeEndless').addEventListener('click', function () { setMode('endless'); });
+prevBtn.addEventListener('click', function () {
+  if (lock || winShown) return;
+  if (mode === 'classic') { if (cur > 0) { cur--; loadLevel(); } }
+  else if (mode === 'endless') { if (endlessIndex > 0) { endlessIndex--; loadLevel(); } }
+});
+nextBtn.addEventListener('click', function () {
+  if (lock || winShown) return;
+  if (mode === 'classic') { if (cur + 1 < LEVELS.length && cur + 1 < unlocked) { cur++; loadLevel(); } }
+  else if (mode === 'endless') { endlessIndex++; loadLevel(); }
+});
+selEl.addEventListener('change', function () {
+  if (lock || winShown) return;
+  cur = parseInt(selEl.value, 10) - 1;
+  loadLevel();
+});
+document.getElementById('wReplay').addEventListener('click', function () { loadLevel(); });
+document.getElementById('wNext').addEventListener('click', function () {
+  if (mode === 'classic') { if (cur + 1 < LEVELS.length) { cur++; loadLevel(); } }
+  else if (mode === 'endless') { endlessIndex++; loadLevel(); }
+});
+
+loadSave();
+loadLevel(0);
+</script>
+</body>
+</html>

@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>沙子方块 · 同色连通消除</title>
+<style>
+:root{--bg:#0e1013;--panel:#171a20;--line:#2a2f3a;--txt:#d8dce4;--dim:#8a919e;--gold:#e8c658;}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:var(--bg);color:var(--txt);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;display:flex;flex-direction:column;align-items:center}
+header{padding:14px 16px 4px;text-align:center}
+h1{margin:0;font-size:20px;letter-spacing:2px}
+h1 .sub{font-size:12px;color:var(--dim);font-weight:400;margin-left:8px}
+main{display:flex;gap:16px;padding:14px 16px 24px;align-items:flex-start}
+.stage{position:relative;background:#08090c;border:1px solid var(--line);padding:6px;border-radius:8px}
+#game{display:block;width:240px;height:480px;cursor:crosshair}
+#overlay{position:absolute;inset:6px;background:rgba(8,9,12,.9);display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;border-radius:4px;text-align:center}
+#overlay.show{display:flex}
+.ov-title{font-size:18px;color:#f0705a;letter-spacing:4px}
+.ov-score{font-size:26px;color:var(--gold)}
+.ov-tip{font-size:12px;color:var(--dim)}
+aside{width:190px;display:flex;flex-direction:column;gap:10px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.panel h3{margin:0 0 8px;font-size:12px;color:var(--dim);font-weight:600;letter-spacing:1px}
+.stat{display:flex;justify-content:space-between;font-size:13px;margin:4px 0}
+.stat b{color:var(--gold)}
+#next{display:block;margin:0 auto;background:#08090c;border-radius:4px;image-rendering:pixelated}
+button{width:100%;padding:8px;background:#232833;border:1px solid var(--line);border-radius:6px;color:var(--txt);font-family:inherit;font-size:13px;cursor:pointer}
+button:hover{background:#2c3342;border-color:#3a4152}
+button.active{background:#3a2a1a;border-color:var(--gold);color:var(--gold)}
+.tips{font-size:11px;line-height:1.9;color:var(--dim)}
+.tips em{color:var(--txt);font-style:normal}
+</style>
+</head>
+<body>
+<header><h1>沙子方块<span class="sub">Sandtrix · 同色连通消除</span></h1></header>
+<main>
+<div class="stage">
+  <canvas id="game" width="240" height="480"></canvas>
+  <div id="overlay"><div class="ov-title">游戏结束</div><div class="ov-score" id="ov-score">0</div><div class="ov-tip">点击任意处重开</div></div>
+</div>
+<aside>
+  <div class="panel"><h3>状态</h3>
+    <div class="stat"><span>得分</span><b id="score">0</b></div>
+    <div class="stat"><span>连击</span><b id="combo">—</b></div>
+    <div class="stat"><span>消除链</span><b id="chains">0</b></div>
+    <div class="stat"><span>速度等级</span><b id="level">1</b></div>
+  </div>
+  <div class="panel"><h3>下一个</h3><canvas id="next" width="96" height="96"></canvas></div>
+  <div class="panel"><h3>操作</h3><div class="tips">
+    <em>移动鼠标</em> 瞄准位置<br>
+    <em>滚轮 / 右键</em> 旋转方块<br>
+    <em>左键点击</em> 投放方块<br><br>
+    投出后无法干预，落沙听天由命。<br>
+    同色沙从左墙连到右墙即消除，<br>塌落引发的连锁有连击加成。
+  </div></div>
+  <div class="panel"><h3>橡皮擦</h3>
+    <button id="eraser">橡皮擦：关闭</button>
+    <div class="tips" style="margin-top:8px">
+      <em>开启后拖动鼠标</em> 按圆形半径擦除沙粒<br>
+      <em>按 E</em> 切换开关；关闭后恢复投放
+    </div>
+  </div>
+  <button id="restart">重新开始</button>
+</aside>
+</main>
+<script>
+'use strict';
+/* ================= 常量 ================= */
+const W=80, H=160, SCALE=3;          // 场地 80×160 颗粒
+const N_COLORS=4;
+const SAND=[[236,198,92],[92,162,242],[98,206,128],[226,106,190]]; // 金黄/天蓝/翠绿/洋红
+const PIECE=8;                        // 每格骨牌 = 8×8 沙粒
+const HOVER_Y=6;                      // 悬停高度
+const TOP_ROWS=6;                     // 顶部危险区（失败判定）
+const STABLE_N=10;                    // 稳定帧数阈值（沙不动 10 帧即结算）
+const FLASH_N=26;                     // 消除闪白帧数
+const BASE_FALL=150;                  // 投放后下落速度 px/s
+const PATH_SHOW=0.7;                  // 连通路径高亮显示时长（秒）
+const ERASE_R=8;                      // 橡皮擦半径（沙粒单位，圆形）
+
+/* ================= 全局状态 ================= */
+const grid=new Uint8Array(W*H);       // 0 空，1..4 沙色
+const jit=new Int8Array(W*H);         // 每粒亮度抖动（沙感）
+const flashT=new Uint16Array(W*H);    // 消除闪白倒计时
+const lastMoved=new Int32Array(W*H);  // 本帧已移动标记（防重复处理）
+let frame=0, rframe=0, stableFrames=0;
+let score=0, combo=0, chains=0;
+let state='hover';                    // hover | falling | over
+let flashList=[], flashCount=0;
+let fallVy=BASE_FALL;
+let mouseX=W/2;
+let piece=null;
+let clearPath=[], clearPathT=0;       // 连通路径提示及显示倒计时（秒）
+let lastLandedColor=0;                // 最近一次落地方块颜色（1..4），用于 detectClears 排序
+let eraserOn=false;                   // 橡皮擦开关（作弊工具，不影响计分）
+let erasing=false;                    // 当前是否正在拖动擦除
+let mouseY=0;                         // 鼠标 grid y 坐标（与 mouseX 同步记录，供橡皮擦使用）
+let mouseInCanvas=false;              // 鼠标是否在画布内（控制擦除范围提示绘制）
+
+/* ================= 骨牌（七种随机） ================= */
+const SHAPES=[
+  [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], // I
+  [[1,1],[1,1]],                               // O
+  [[0,1,0],[1,1,1],[0,0,0]],                   // T
+  [[0,1,1],[1,1,0],[0,0,0]],                   // S
+  [[1,1,0],[0,1,1],[0,0,0]],                   // Z
+  [[1,0,0],[1,1,1],[0,0,0]],                   // J
+  [[0,0,1],[1,1,1],[0,0,0]],                   // L
+];
+let bag=[], nextM=null, nextColor=1;
+
+function buildPiece(m,color){
+  const h=m.length, w=m[0].length, cells=[], bottoms=[];
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(m[y][x]){
+    cells.push([x,y]);
+    if(y+1>=h||!m[y+1][x])bottoms.push([x,y]); // 每列最底格（碰撞检测用）
+  }
+  return {m,color,cells,bottoms,pw:w*PIECE,ph:h*PIECE,x:0,y:HOVER_Y};
+}
+function rotM(m,dir){
+  const h=m.length, w=m[0].length, r=[];
+  for(let y=0;y<w;y++)r.push(new Array(h).fill(0));
+  if(dir>0){for(let y=0;y<w;y++)for(let x=0;x<h;x++)r[y][x]=m[h-1-x][y];}
+  else     {for(let y=0;y<w;y++)for(let x=0;x<h;x++)r[y][x]=m[x][w-1-y];}
+  return r;
+}
+function clampX(x){return Math.max(0,Math.min(W-piece.pw,Math.round(x)));}
+
+function pullNext(){
+  if(!bag.length){
+    bag=[0,1,2,3,4,5,6];
+    for(let i=6;i>0;i--){const j=Math.random()*(i+1)|0;[bag[i],bag[j]]=[bag[j],bag[i]];}
+  }
+  nextM=SHAPES[bag.pop()];
+  nextColor=1+(Math.random()*N_COLORS|0);
+}
+function spawnPiece(){
+  piece=buildPiece(nextM,nextColor);
+  piece.x=clampX(mouseX-piece.pw/2);
+  piece.y=HOVER_Y;
+  state='hover'; stableFrames=0;
+  pullNext(); renderNext();
+}
+function rotatePiece(dir){
+  if(state!=='hover'||!piece)return;
+  const cx=piece.x+piece.pw/2;
+  const np=buildPiece(rotM(piece.m,dir),piece.color);
+  np.x=clampX(cx-np.pw/2); np.y=piece.y;
+  piece=np;
+}
+function dropPiece(){
+  if(state!=='hover')return;
+  // 悬停位置使用了平滑插值，投放时必须锁定到整数沙粒坐标。
+  // 否则 Uint8Array 会收到小数索引，落地沙粒不会写入真实网格。
+  piece.x=Math.round(piece.x);
+  state='falling';
+  fallVy=BASE_FALL*Math.pow(1.08,Math.floor(chains/5)); // 每消除5条链提速8%
+}
+
+/* 刚体碰撞：检查方块的所有有效格子，避免穿入空洞或不规则沙堆。 */
+function collideAt(y){
+  const px=Math.round(piece.x), py=Math.floor(y);
+  for(const [cx,cy] of piece.cells){
+    const x0=px+cx*PIECE, y0=py+cy*PIECE;
+    if(x0<0||x0+PIECE>W||y0<0||y0+PIECE>H)return true;
+    for(let gy=0;gy<PIECE;gy++)for(let gx=0;gx<PIECE;gx++){
+      if(grid[(y0+gy)*W+x0+gx])return true;
+    }
+  }
+  return false;
+}
+/* 落地：使用与碰撞检测相同的整数坐标写入沙粒。 */
+function disintegrate(y){
+  const px=Math.round(piece.x), py=Math.floor(y);
+  lastLandedColor=piece.color;        // 落地成功写入沙粒：记录最近一次落地方块颜色
+  for(const [cx,cy] of piece.cells){
+    for(let gy=0;gy<PIECE;gy++)for(let gx=0;gx<PIECE;gx++){
+      const xx=px+cx*PIECE+gx, yy=py+cy*PIECE+gy;
+      if(xx>=0&&xx<W&&yy>=0&&yy<H){
+        const i=yy*W+xx;
+        // 正常情况下落点已由 collideAt 保证为空；保留判断作为安全保护。
+        if(!grid[i]){grid[i]=piece.color;jit[i]=(Math.random()*45|0)-22;}
+      }
+    }
+  }
+}
+
+/* ================= 元胞自动机：沙物理 ================= */
+function simStep(){
+  frame++; let moved=0;
+  for(let y=H-2;y>=0;y--){
+    const ltr=(y+frame)%2===0;          // 行扫描方向交替，流动无偏
+    for(let k=0;k<W;k++){
+      const x=ltr?k:W-1-k;
+      const i=y*W+x, c=grid[i];
+      if(!c||lastMoved[i]===frame)continue;
+      const bi=i+W;
+      if(!grid[bi]&&!flashT[bi]){       // 直落
+        grid[bi]=c;jit[bi]=jit[i];lastMoved[bi]=frame;grid[i]=0;moved++;continue;
+      }
+      const d=Math.random()<0.5?1:-1;   // 斜滑（自然堆成 ~45° 坡）
+      for(const dd of [d,-d]){
+        const nx=x+dd;
+        if(nx<0||nx>=W)continue;
+        const ni=bi+dd;
+        if(!grid[ni]&&!flashT[ni]){
+          grid[ni]=c;jit[ni]=jit[i];lastMoved[ni]=frame;grid[i]=0;moved++;break;
+        }
+      }
+    }
+  }
+  if(moved)stableFrames=0; else stableFrames++;
+}
+
+/* ================= 同色连通检测（颗粒级 8 连通） =================
+   洪水填充：从左墙同色沙出发，8 连通（含对角）扩散，摸到右墙即整链消除。
+   粒度 = 单颗粒，所见即所得——视觉上挨着的沙就算连上。 */
+function detectClears(){
+  const out=[];
+  // 多颜色同时贯通时，优先最近一次落地方块的颜色；若该色未贯通，再按其余颜色顺序检测。
+  // 仍然一次只返回一个颜色的区域（保持原有结算语义）。
+  const order=[];
+  if(lastLandedColor>=1&&lastLandedColor<=4)order.push(lastLandedColor);
+  for(let c=1;c<=4;c++)if(c!==lastLandedColor)order.push(c);
+  for(const c of order){
+    const vis=new Uint8Array(W*H), par=new Int32Array(W*H), q=[];
+    par.fill(-1);
+    for(let y=0;y<H;y++){const i=y*W;if(grid[i]===c&&!flashT[i]){vis[i]=1;par[i]=i;q.push(i);}}
+    let reach=false, hitI=-1;
+    while(q.length){
+      const i=q.pop(), x=i%W, y=(i/W)|0;
+      if(x===W-1){reach=true; if(hitI<0)hitI=i;}   // 记录首个右墙命中点；继续完整 BFS 以保证消除集合不变
+      for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){
+        if(!dx&&!dy)continue;
+        const nx=x+dx, ny=y+dy;
+        if(nx<0||nx>=W||ny<0||ny>=H)continue;
+        const ni=ny*W+nx;
+        if(!vis[ni]&&grid[ni]===c&&!flashT[ni]){vis[ni]=1;par[ni]=i;q.push(ni);}
+      }
+    }
+    if(reach){                      // 一次结算只消除最先贯通的颜色，其余颜色留待后续结算
+      // 由 parent 回溯：从右墙命中粒子一直追溯到左墙种子，保存为连通路径提示
+      const path=[]; let cur=hitI;
+      while(par[cur]!==cur){path.push(cur); cur=par[cur];}
+      path.push(cur);
+      clearPath=path; clearPathT=PATH_SHOW;
+      for(let i=0;i<W*H;i++)if(vis[i])out.push(i);
+      return out;
+    }
+  }
+  clearPath=[]; clearPathT=0;        // 本轮无贯通：清空路径提示
+  return out;
+}
+
+function checkOver(){
+  for(let y=0;y<TOP_ROWS;y++)for(let x=0;x<W;x++)if(grid[y*W+x])return true;
+  return false;
+}
+function tryClear(){
+  const cells=detectClears();
+  if(cells.length){
+    combo++; score+=cells.length*10*combo; chains++;
+    for(const i of cells)flashT[i]=FLASH_N;
+    flashList=cells; flashCount=cells.length; stableFrames=0;
+  }else{
+    combo=0;
+    if(checkOver())gameOver();
+  }
+}
+function gameOver(){
+  state='over';
+  ovScore.textContent=score;
+  overlay.classList.add('show');
+}
+function restart(){
+  grid.fill(0);flashT.fill(0);jit.fill(0);lastMoved.fill(0);
+  score=0;combo=0;chains=0;stableFrames=0;
+  flashList=[];flashCount=0;bag=[];
+  clearPath=[];clearPathT=0;             // 清理连通路径提示
+  lastLandedColor=0;                     // 清零最近落地方块颜色
+  overlay.classList.remove('show');
+  pullNext();spawnPiece();
+}
+
+/* ================= 主循环 ================= */
+function update(dt){
+  if(state==='over')return;
+  if(clearPathT>0){                     // 连通路径提示倒计时（消除闪白期间也继续衰减/显示）
+    clearPathT-=dt; if(clearPathT<=0){clearPathT=0; clearPath=[];}
+  }
+  if(flashCount>0){                     // 消除闪白期间全场定格
+    for(const i of flashList){
+      if(flashT[i]>0){flashT[i]--;if(flashT[i]===0){grid[i]=0;flashCount--;}}
+    }
+    if(flashCount===0){flashList=[];stableFrames=0;}
+    return;
+  }
+  simStep();
+  if(state==='falling'){                // 投放即弃：只受重力
+    const ny=piece.y+fallVy*dt;
+    if(collideAt(Math.floor(ny))){
+      let y=Math.floor(piece.y);
+      while(y>0&&collideAt(y))y--;
+      if(collideAt(y)){                 // 回退到 y=0 仍碰撞：场地已满，直接判负，不落沙也不生成新方块
+        gameOver();
+        return;
+      }
+      disintegrate(y);
+      spawnPiece();
+    }else piece.y=ny;
+  }else if(state==='hover'&&piece){
+    const tx=clampX(mouseX-piece.pw/2);
+    piece.x+=(tx-piece.x)*0.5;
+    if(stableFrames>=STABLE_N)tryClear();
+  }
+}
+
+/* ================= 渲染 ================= */
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const nextCv=document.getElementById('next');
+const nctx=nextCv.getContext('2d');
+const overlay=document.getElementById('overlay');
+const ovScore=document.getElementById('ov-score');
+const elScore=document.getElementById('score');
+const elCombo=document.getElementById('combo');
+const elChains=document.getElementById('chains');
+const elLevel=document.getElementById('level');
+
+const off=document.createElement('canvas'); off.width=W; off.height=H;
+const octx=off.getContext('2d');
+const img=octx.createImageData(W,H);
+const px=img.data;
+
+function predictLand(){
+  let y=Math.floor(piece.y), guard=0;
+  while(!collideAt(y+1)&&guard++<H)y++;
+  return y;
+}
+function render(){
+  rframe++;
+  for(let i=0;i<W*H;i++){
+    const o=i*4, c=grid[i];
+    if(flashT[i]){const v=((rframe>>2)&1)?255:170;px[o]=px[o+1]=px[o+2]=v;}
+    else if(c){const b=SAND[c-1],j=jit[i];px[o]=b[0]+j;px[o+1]=b[1]+j;px[o+2]=b[2]+j;}
+    else{px[o]=10;px[o+1]=11;px[o+2]=15;}
+    px[o+3]=255;
+  }
+  if(piece&&state!=='over'){            // 悬停/下落中的刚体方块
+    const bx=Math.floor(piece.x), by=Math.floor(piece.y), b=SAND[piece.color-1];
+    for(const [cx,cy] of piece.cells){
+      for(let gy=0;gy<PIECE;gy++)for(let gx=0;gx<PIECE;gx++){
+        const xx=bx+cx*PIECE+gx, yy=by+cy*PIECE+gy;
+        if(xx<0||xx>=W||yy<0||yy>=H)continue;
+        const o=(yy*W+xx)*4;
+        const j=((gx*7+gy*13+cx*29+cy*17)%45)-22;
+        px[o]=b[0]+j;px[o+1]=b[1]+j;px[o+2]=b[2]+j;px[o+3]=255;
+      }
+    }
+  }
+  octx.putImageData(img,0,0);
+  ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(off,0,0,W*SCALE,H*SCALE);
+  if(state==='hover'&&piece){           // 落点预览虚线框
+    const ly=predictLand();
+    ctx.strokeStyle='rgba(255,255,255,0.25)';
+    ctx.lineWidth=1;
+    ctx.setLineDash([4,3]);
+    ctx.strokeRect(piece.x*SCALE+0.5,ly*SCALE+0.5,piece.pw*SCALE-1,piece.ph*SCALE-1);
+    ctx.setLineDash([]);
+  }
+  if(clearPathT>0&&clearPath.length){   // 连通路径提示：发光描边，明显但不遮挡沙粒
+    ctx.save();
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=6;
+    ctx.beginPath();
+    for(let k=0;k<clearPath.length;k++){
+      const i=clearPath[k], gx=i%W, gy=(i/W)|0;
+      const cx=gx*SCALE+SCALE/2, cy=gy*SCALE+SCALE/2;
+      if(k===0)ctx.moveTo(cx,cy); else ctx.lineTo(cx,cy);
+    }
+    ctx.stroke();
+    ctx.strokeStyle='rgba(255,250,220,0.85)'; ctx.lineWidth=2;
+    ctx.beginPath();
+    for(let k=0;k<clearPath.length;k++){
+      const i=clearPath[k], gx=i%W, gy=(i/W)|0;
+      const cx=gx*SCALE+SCALE/2, cy=gy*SCALE+SCALE/2;
+      if(k===0)ctx.moveTo(cx,cy); else ctx.lineTo(cx,cy);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+  if(eraserOn&&mouseInCanvas){            // 橡皮擦范围提示（圆形描边）
+    ctx.save();
+    ctx.strokeStyle='rgba(232,198,88,0.85)';
+    ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.arc(mouseX*SCALE, mouseY*SCALE, ERASE_R*SCALE, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  }
+  elScore.textContent=score;
+  elCombo.textContent=combo>1?('×'+combo):'—';
+  elChains.textContent=chains;
+  elLevel.textContent=Math.floor(chains/5)+1;
+}
+function renderNext(){
+  nctx.fillStyle='#08090c';nctx.fillRect(0,0,96,96);
+  if(!nextM)return;
+  const m=nextM,h=m.length,w=m[0].length,cs=16;
+  const ox=(96-w*cs)/2,oy=(96-h*cs)/2,b=SAND[nextColor-1];
+  nctx.fillStyle='rgb('+b[0]+','+b[1]+','+b[2]+')';
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++)if(m[y][x])
+    nctx.fillRect(ox+x*cs,oy+y*cs,cs-1,cs-1);
+}
+
+/* ================= 橡皮擦（作弊工具） =================
+   仅擦除沙粒，不触及 score/combo/chains，也不触发消除结算。
+   闪白期间禁止擦除，避免改动 flashT 破坏 flashCount/flashList 的一致性。 */
+function eraseAt(gx,gy){
+  if(!eraserOn)return;                // 关闭时直接忽略
+  if(flashCount>0)return;             // 闪白期间全场定格，交由 update 结算
+  const r2=ERASE_R*ERASE_R;
+  const x0=Math.max(0,Math.floor(gx-ERASE_R)), x1=Math.min(W-1,Math.ceil(gx+ERASE_R));
+  const y0=Math.max(0,Math.floor(gy-ERASE_R)), y1=Math.min(H-1,Math.ceil(gy+ERASE_R));
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+    const dx=x-gx, dy=y-gy;
+    if(dx*dx+dy*dy>r2)continue;       // 圆形半径裁剪
+    const i=y*W+x;
+    if(flashT[i])continue;            // 双保险：不动闪白中的格子
+    grid[i]=0; jit[i]=0; lastMoved[i]=0;
+  }
+}
+function setEraser(on){
+  eraserOn=!!on;
+  erasing=false;                      // 切换开关时停止任何进行中的拖动擦除
+  eraserBtn.textContent='橡皮擦：'+(eraserOn?'开启':'关闭');
+  eraserBtn.classList.toggle('active',eraserOn);
+}
+
+/* ================= 输入（纯鼠标） ================= */
+canvas.addEventListener('mousemove',e=>{
+  const r=canvas.getBoundingClientRect();
+  mouseX=(e.clientX-r.left)/r.width*W;
+  mouseY=(e.clientY-r.top)/r.height*H;   // 同步记录 grid y，供橡皮擦使用（不影响瞄准）
+  mouseInCanvas=true;
+  if(erasing)eraseAt(mouseX,mouseY);     // 拖动擦除：移动时持续清除
+});
+canvas.addEventListener('mouseleave',()=>{erasing=false;mouseInCanvas=false;});  // 离开画布停止擦除
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  rotatePiece(e.deltaY>0?1:-1);
+},{passive:false});
+canvas.addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  rotatePiece(-1);
+});
+canvas.addEventListener('mousedown',e=>{
+  if(e.button!==0)return;
+  if(state==='over'){restart();return;}
+  if(eraserOn){                         // 橡皮擦开启：按下/拖动只擦除，不投放方块
+    erasing=true;
+    eraseAt(mouseX,mouseY);
+    return;
+  }
+  dropPiece();
+});
+if(typeof window!=='undefined')window.addEventListener('mouseup',()=>{erasing=false;});  // 释放（含画布外）停止擦除
+overlay.addEventListener('click',()=>{if(state==='over')restart();});
+document.getElementById('restart').addEventListener('click',restart);
+
+/* 橡皮擦按钮 + E 键切换 */
+const eraserBtn=document.getElementById('eraser');
+eraserBtn.addEventListener('click',()=>setEraser(!eraserOn));
+const onEraserKey=e=>{ if(e.key==='e'||e.key==='E')setEraser(!eraserOn); };
+if(typeof window!=='undefined')window.addEventListener('keydown',onEraserKey);
+else if(typeof document!=='undefined'&&typeof document.addEventListener==='function')document.addEventListener('keydown',onEraserKey);
+
+/* ================= 启动 ================= */
+pullNext(); spawnPiece();
+let last=0;
+function loop(t){
+  const dt=last?Math.min(0.05,(t-last)/1000):0.016;
+  last=t;
+  update(dt); render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+/* 真实投放：设置目标 x，投放后驱动 update 直到 falling 结束（或达到帧数上限） */
+function dropAndSettle(x, maxFrames){
+  maxFrames=maxFrames||3000;
+  if(state!=='hover'||!piece)return {state:state, frames:0};
+  mouseX=x;
+  piece.x=clampX(x-piece.pw/2);          // 锁定到目标列，避免插值未到位
+  dropPiece();
+  let f=0;
+  while(state==='falling'&&f<maxFrames){update(1/60); f++;}
+  return {state:state, frames:f};
+}
+
+/* 测试钩子（浏览器中无害） */
+if(typeof globalThis!=='undefined'){
+  globalThis.__sand={
+    grid, W, H, SCALE,
+    set:(x,y,c)=>{grid[y*W+x]=c;},
+    detect:detectClears, step:simStep, over:checkOver,
+    restart, dropPiece, spawnPiece, dropAndSettle, clampX, rotatePiece,
+    get state(){return state;},
+    get piece(){return piece;},
+    get lastLandedColor(){return lastLandedColor;}, set lastLandedColor(c){lastLandedColor=c|0;},
+    // 橡皮擦作弊工具（不触及计分）
+    ERASE_R, setEraser, eraseAt,
+    get eraserOn(){return eraserOn;},
+    get score(){return score;},
+    get combo(){return combo;},
+    get chains(){return chains;},
+    flashActive:()=>flashCount>0,
+    __setFlash:(n,list)=>{flashCount=n|0;flashList=list||[];}   // 测试钩子：模拟闪白期间
+  };
+}
+</script>
+</body>
+</html>

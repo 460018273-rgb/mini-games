@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>圣诞树</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #0a0a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            flex: 1;
+            width: 100%;
+        }
+
+        .tree-container {
+            position: relative;
+            margin-bottom: 50px;
+            filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.5));
+        }
+
+        .tree {
+            position: relative;
+            width: 400px;
+            height: 550px;
+            margin: 0 auto;
+        }
+
+        /* 树的主体 - 使用更精确的三角形 */
+        .tree-layer {
+            position: absolute;
+            width: 0;
+            height: 0;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+        }
+
+        .layer1 {
+            bottom: 0;
+            left: 50px;
+            border-left: 150px solid transparent;
+            border-right: 150px solid transparent;
+            border-bottom: 140px solid #0a5a1a;
+        }
+
+        .layer2 {
+            bottom: 100px;
+            left: 80px;
+            border-left: 120px solid transparent;
+            border-right: 120px solid transparent;
+            border-bottom: 120px solid #0d6b1f;
+        }
+
+        .layer3 {
+            bottom: 180px;
+            left: 110px;
+            border-left: 90px solid transparent;
+            border-right: 90px solid transparent;
+            border-bottom: 100px solid #0f7a23;
+        }
+
+        .layer4 {
+            bottom: 250px;
+            left: 140px;
+            border-left: 60px solid transparent;
+            border-right: 60px solid transparent;
+            border-bottom: 80px solid #128a27;
+        }
+
+        /* 树干 */
+        .trunk {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 30px;
+            height: 70px;
+            background: linear-gradient(to right, #654321, #8B4513, #654321);
+            border-radius: 5px;
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.3);
+        }
+
+        /* 星星 - 精确定位在树顶 */
+        .star {
+            position: absolute;
+            bottom: 330px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 40px;
+            height: 40px;
+            z-index: 10;
+        }
+
+        .star::before,
+        .star::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .star::before {
+            border-left: 20px solid transparent;
+            border-right: 20px solid transparent;
+            border-bottom: 35px solid #FFD700;
+            transform: translateX(-50%);
+            left: 50%;
+            filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.8));
+        }
+
+        .star::after {
+            border-left: 20px solid transparent;
+            border-right: 20px solid transparent;
+            border-top: 35px solid #FFD700;
+            transform: translateX(-50%) translateY(10px);
+            left: 50%;
+            filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.8));
+        }
+
+        /* 灯光装饰 */
+        .light {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            box-shadow: 0 0 10px currentColor;
+            transition: opacity 0.1s ease;
+        }
+
+        .light.red { background: #ff0000; color: #ff0000; }
+        .light.blue { background: #0066ff; color: #0066ff; }
+        .light.yellow { background: #ffff00; color: #ffff00; }
+        .light.green { background: #00ff00; color: #00ff00; }
+        .light.purple { background: #ff00ff; color: #ff00ff; }
+        .light.orange { background: #ff8800; color: #ff8800; }
+        .light.pink { background: #ff66cc; color: #ff66cc; }
+        .light.cyan { background: #00ffff; color: #00ffff; }
+
+        .light.off {
+            opacity: 0.2;
+        }
+
+        .light.on {
+            opacity: 1;
+            animation: twinkle 0.3s ease-in-out;
+        }
+
+        @keyframes twinkle {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.3); }
+        }
+
+        /* 装饰球 */
+        .ornament {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .ornament.red { background: radial-gradient(circle at 30% 30%, #ff6b6b, #c92a2a); }
+        .ornament.blue { background: radial-gradient(circle at 30% 30%, #4dabf7, #1c7ed6); }
+        .ornament.gold { background: radial-gradient(circle at 30% 30%, #ffd43b, #f59f00); }
+        .ornament.silver { background: radial-gradient(circle at 30% 30%, #e9ecef, #868e96); }
+
+        /* 按钮样式 */
+        .button-container {
+            margin-top: 30px;
+        }
+
+        .light-button {
+            padding: 15px 40px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #fff;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 8px 20px rgba(255, 107, 107, 0.4);
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        .light-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 25px rgba(255, 107, 107, 0.6);
+        }
+
+        .light-button:active {
+            transform: translateY(-1px);
+        }
+
+        .light-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* 祝福文字 */
+        .greeting {
+            position: absolute;
+            top: 20%;
+            left: 50%;
+            transform: translateX(-50%) translateY(-50px);
+            font-size: 36px;
+            font-weight: bold;
+            color: #FFD700;
+            text-shadow: 
+                0 0 10px rgba(255, 215, 0, 0.8),
+                0 0 20px rgba(255, 215, 0, 0.6),
+                0 0 30px rgba(255, 215, 0, 0.4),
+                2px 2px 4px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            pointer-events: none;
+            white-space: nowrap;
+            z-index: 100;
+            transition: opacity 0.8s ease, transform 0.8s ease;
+        }
+
+        @keyframes glow {
+            0%, 100% {
+                text-shadow: 
+                    0 0 10px rgba(255, 215, 0, 0.8),
+                    0 0 20px rgba(255, 215, 0, 0.6),
+                    0 0 30px rgba(255, 215, 0, 0.4),
+                    2px 2px 4px rgba(0, 0, 0, 0.5);
+            }
+            50% {
+                text-shadow: 
+                    0 0 20px rgba(255, 215, 0, 1),
+                    0 0 30px rgba(255, 215, 0, 0.8),
+                    0 0 40px rgba(255, 215, 0, 0.6),
+                    2px 2px 4px rgba(0, 0, 0, 0.5);
+            }
+        }
+
+        .greeting.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+            animation: glow 2s ease-in-out infinite;
+        }
+
+        /* 雪花效果 - 更自然的飘落 */
+        .snowflake {
+            position: absolute;
+            color: white;
+            font-size: 16px;
+            opacity: 0.8;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        @keyframes fall {
+            0% {
+                transform: translateY(-100px) translateX(0) rotate(0deg);
+                opacity: 0;
+            }
+            10% {
+                opacity: 0.8;
+            }
+            90% {
+                opacity: 0.8;
+            }
+            100% {
+                transform: translateY(calc(100vh + 100px)) translateX(var(--drift)) rotate(720deg);
+                opacity: 0;
+            }
+        }
+
+        @keyframes drift {
+            0%, 100% {
+                transform: translateX(0);
+            }
+            50% {
+                transform: translateX(var(--drift));
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 祝福文字 -->
+        <div class="greeting" id="greeting">祝柏子圣诞节快乐</div>
+        
+        <div class="tree-container">
+            <div class="tree">
+                <!-- 树层 -->
+                <div class="tree-layer layer1"></div>
+                <div class="tree-layer layer2"></div>
+                <div class="tree-layer layer3"></div>
+                <div class="tree-layer layer4"></div>
+                
+                <!-- 树干 -->
+                <div class="trunk"></div>
+                
+                <!-- 星星 -->
+                <div class="star"></div>
+                
+                <!-- 灯光装饰 - 会在JavaScript中动态生成 -->
+            </div>
+        </div>
+        
+        <div class="button-container">
+            <button class="light-button" id="lightButton">点亮圣诞树</button>
+        </div>
+    </div>
+
+    <script>
+        // 创建灯光装饰
+        const tree = document.querySelector('.tree');
+        const lightButton = document.getElementById('lightButton');
+        const greeting = document.getElementById('greeting');
+        const lights = [];
+        
+        // 灯光位置配置（相对于树的坐标，精确分布在树的各个部分）
+        // 树的宽度：400px，中心在200px
+        // 树的高度：550px，从下往上
+        const lightPositions = [
+            // 第一层（最底层，bottom: 0-140px）
+            { x: 80, y: 480, color: 'red' },
+            { x: 120, y: 470, color: 'blue' },
+            { x: 160, y: 475, color: 'yellow' },
+            { x: 200, y: 465, color: 'green' },
+            { x: 240, y: 472, color: 'purple' },
+            { x: 280, y: 468, color: 'orange' },
+            { x: 100, y: 450, color: 'pink' },
+            { x: 180, y: 455, color: 'cyan' },
+            { x: 220, y: 460, color: 'red' },
+            { x: 260, y: 450, color: 'blue' },
+            
+            // 第二层（bottom: 100-220px）
+            { x: 110, y: 380, color: 'yellow' },
+            { x: 150, y: 375, color: 'green' },
+            { x: 190, y: 370, color: 'purple' },
+            { x: 230, y: 375, color: 'orange' },
+            { x: 270, y: 380, color: 'pink' },
+            { x: 130, y: 360, color: 'cyan' },
+            { x: 170, y: 355, color: 'red' },
+            { x: 210, y: 360, color: 'blue' },
+            { x: 250, y: 365, color: 'yellow' },
+            
+            // 第三层（bottom: 180-280px）
+            { x: 140, y: 300, color: 'green' },
+            { x: 180, y: 295, color: 'purple' },
+            { x: 220, y: 300, color: 'orange' },
+            { x: 260, y: 305, color: 'pink' },
+            { x: 160, y: 280, color: 'cyan' },
+            { x: 200, y: 275, color: 'red' },
+            { x: 240, y: 280, color: 'blue' },
+            
+            // 第四层（bottom: 250-330px）
+            { x: 170, y: 230, color: 'yellow' },
+            { x: 210, y: 225, color: 'green' },
+            { x: 250, y: 230, color: 'purple' },
+            { x: 190, y: 210, color: 'orange' },
+            { x: 230, y: 215, color: 'pink' },
+            
+            // 顶部区域（接近树顶）
+            { x: 200, y: 180, color: 'cyan' },
+            { x: 180, y: 170, color: 'red' },
+            { x: 220, y: 175, color: 'blue' },
+        ];
+
+        // 创建灯光元素
+        lightPositions.forEach(pos => {
+            const light = document.createElement('div');
+            light.className = `light ${pos.color} off`;
+            light.style.left = `${pos.x}px`;
+            light.style.top = `${pos.y}px`;
+            tree.appendChild(light);
+            lights.push(light);
+        });
+
+        // 添加装饰球
+        const ornamentPositions = [
+            { x: 90, y: 490, color: 'red' },
+            { x: 140, y: 485, color: 'blue' },
+            { x: 190, y: 490, color: 'gold' },
+            { x: 240, y: 485, color: 'silver' },
+            { x: 290, y: 488, color: 'red' },
+            { x: 120, y: 390, color: 'blue' },
+            { x: 170, y: 385, color: 'gold' },
+            { x: 220, y: 390, color: 'silver' },
+            { x: 270, y: 388, color: 'red' },
+            { x: 150, y: 310, color: 'blue' },
+            { x: 200, y: 305, color: 'gold' },
+            { x: 250, y: 310, color: 'silver' },
+            { x: 180, y: 240, color: 'red' },
+            { x: 230, y: 235, color: 'blue' },
+        ];
+
+        ornamentPositions.forEach(pos => {
+            const ornament = document.createElement('div');
+            ornament.className = `ornament ${pos.color}`;
+            ornament.style.left = `${pos.x}px`;
+            ornament.style.top = `${pos.y}px`;
+            tree.appendChild(ornament);
+        });
+
+        // 《Jingle Bells》的节奏模式（以毫秒为单位）
+        // 典型的节奏：强-弱-强-弱-强-弱-强-弱
+        // 每个节拍大约200-300毫秒
+        const jingleBellsPattern = [
+            // Jingle bells, jingle bells
+            200, 200, 200, 200, 200, 200, 200, 200,
+            // jingle all the way
+            200, 200, 200, 200, 200, 200, 200, 200,
+            // Oh what fun it is to ride
+            200, 200, 200, 200, 200, 200, 200, 200,
+            // in a one horse open sleigh
+            200, 200, 200, 200, 200, 200, 200, 200,
+            // Jingle bells, jingle bells
+            200, 200, 200, 200, 200, 200, 200, 200,
+            // jingle all the way
+            200, 200, 200, 200, 200, 200, 200, 200,
+            // Oh what fun it is to ride
+            200, 200, 200, 200, 200, 200, 200, 200,
+            // in a one horse open sleigh
+            200, 200, 200, 200, 200, 200, 200, 200,
+        ];
+
+        let isLighting = false;
+        let animationId = null;
+
+        function toggleLights(on) {
+            lights.forEach(light => {
+                if (on) {
+                    light.classList.remove('off');
+                    light.classList.add('on');
+                } else {
+                    light.classList.remove('on');
+                    light.classList.add('off');
+                }
+            });
+        }
+
+        function animateLights() {
+            if (!isLighting) return;
+
+            let patternIndex = 0;
+            let totalTime = 0;
+
+            function nextFlash() {
+                if (!isLighting) return;
+
+                // 随机选择一些灯光闪烁
+                const numLightsToFlash = Math.floor(lights.length * 0.6) + Math.floor(Math.random() * 5);
+                const lightsToFlash = [];
+                
+                // 随机选择灯光
+                const shuffled = [...lights].sort(() => Math.random() - 0.5);
+                for (let i = 0; i < numLightsToFlash; i++) {
+                    lightsToFlash.push(shuffled[i]);
+                }
+
+                // 先关闭所有灯光
+                lights.forEach(light => {
+                    light.classList.remove('on');
+                    light.classList.add('off');
+                });
+
+                // 闪烁选中的灯光
+                setTimeout(() => {
+                    lightsToFlash.forEach(light => {
+                        light.classList.remove('off');
+                        light.classList.add('on');
+                    });
+                }, 10);
+
+                // 根据节奏模式设置下一次闪烁
+                if (patternIndex < jingleBellsPattern.length) {
+                    const delay = jingleBellsPattern[patternIndex];
+                    patternIndex++;
+                    totalTime += delay;
+                    
+                    setTimeout(() => {
+                        nextFlash();
+                    }, delay);
+                } else {
+                    // 循环播放
+                    patternIndex = 0;
+                    setTimeout(() => {
+                        nextFlash();
+                    }, 500); // 短暂停顿后重新开始
+                }
+            }
+
+            nextFlash();
+        }
+
+        lightButton.addEventListener('click', () => {
+            if (isLighting) {
+                // 停止动画
+                isLighting = false;
+                lightButton.textContent = '点亮圣诞树';
+                lightButton.disabled = false;
+                toggleLights(false);
+                // 隐藏祝福文字
+                greeting.classList.remove('show');
+            } else {
+                // 开始动画
+                isLighting = true;
+                lightButton.textContent = '熄灭圣诞树';
+                animateLights();
+                // 显示祝福文字
+                setTimeout(() => {
+                    greeting.classList.add('show');
+                }, 300); // 延迟300ms显示，让灯光先开始闪烁
+            }
+        });
+
+        // 创建雪花效果 - 更自然的飘落
+        function createSnowflake() {
+            const snowflake = document.createElement('div');
+            snowflake.className = 'snowflake';
+            snowflake.textContent = '❄';
+            
+            // 随机起始位置
+            const startX = Math.random() * 100;
+            snowflake.style.left = startX + '%';
+            
+            // 随机飘落时间和左右摆动幅度
+            const fallDuration = (Math.random() * 4 + 3) + 's'; // 3-7秒
+            const driftAmount = (Math.random() * 100 - 50) + 'px'; // -50到50px的摆动
+            snowflake.style.setProperty('--drift', driftAmount);
+            
+            // 随机大小
+            const size = Math.random() * 8 + 12; // 12-20px
+            snowflake.style.fontSize = size + 'px';
+            
+            // 随机透明度
+            snowflake.style.opacity = Math.random() * 0.4 + 0.5; // 0.5-0.9
+            
+            // 随机延迟开始
+            snowflake.style.animationDelay = Math.random() * 0.5 + 's';
+            
+            // 应用动画
+            snowflake.style.animation = `fall ${fallDuration} linear forwards`;
+            
+            document.body.appendChild(snowflake);
+
+            // 在动画结束后移除
+            setTimeout(() => {
+                if (snowflake.parentNode) {
+                    snowflake.remove();
+                }
+            }, parseFloat(fallDuration) * 1000 + 500);
+        }
+
+        // 定期创建雪花，间隔更随机
+        function scheduleNextSnowflake() {
+            const delay = Math.random() * 400 + 200; // 200-600ms
+            setTimeout(() => {
+                createSnowflake();
+                scheduleNextSnowflake();
+            }, delay);
+        }
+        
+        // 初始创建一些雪花
+        for (let i = 0; i < 5; i++) {
+            setTimeout(() => createSnowflake(), i * 300);
+        }
+        
+        // 开始持续创建雪花
+        scheduleNextSnowflake();
+    </script>
+</body>
+</html>

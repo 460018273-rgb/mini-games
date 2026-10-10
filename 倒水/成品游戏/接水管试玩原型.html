@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>接水管 · 试玩原型</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #e9e7de; color: #3a3832; }
+  #app { max-width: 680px; margin: 0 auto; padding: 12px; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 10px; }
+  header .title { font-size: 19px; font-weight: 700; letter-spacing: 1px; }
+  header button, footer button, footer select {
+    font-size: 14px; padding: 7px 14px; border: 1px solid #c4c0b2; border-radius: 8px;
+    background: #fff; color: #3a3832; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.08);
+  }
+  header button:hover, footer button:hover:not(:disabled) { background: #f2f0e8; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  #boardCard { background: #fbfaf5; border-radius: 14px; padding: 10px; box-shadow: 0 2px 10px rgba(0,0,0,.10); }
+  #boardWrap { display: flex; justify-content: center; }
+  #svg { display: block; width: min(600px, 94vw); height: auto; }
+  .cell-inactive { fill: #edf0f3; stroke: #d9dee5; }
+  .cell-active { fill: #ffffff; stroke: #b8c3cf; }
+  .pipe-line { stroke: #1c658f; stroke-width: 10; stroke-linecap: round; }
+  .pipe-hub { fill: #1c658f; }
+  .pipe-line.lit { stroke: #2f80ed; stroke-width: 13; stroke-dasharray: 20 12; animation: flow .9s linear infinite; }
+  .pipe-hub.lit { fill: #2f80ed; }
+  .lock-badge rect { fill: #d97706; stroke: #92400e; stroke-width: 1.5; }
+  .lock-badge-text { fill: #ffffff; font-weight: 700; }
+  @keyframes flow { to { stroke-dashoffset: -32; } }
+  .edge-label { fill: #31556d; font-size: 14px; font-weight: 700; pointer-events: none; }
+  .seg { cursor: pointer; }
+  .seg.pop { animation: pop .2s ease; }
+  @keyframes pop { 0% { transform: scale(1); } 45% { transform: scale(1.14); } 100% { transform: scale(1); } }
+  footer { text-align: center; padding: 14px 0 26px; }
+  footer .stats { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+  footer .stats .num { color: #2f80ed; }
+  footer .hint { min-height: 22px; font-size: 14px; color: #6b675c; margin-bottom: 10px; }
+  footer .controls { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; align-items: center; }
+  footer .controls .sep { color: #c4c0b2; }
+  #win { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.48);
+         display: none; align-items: center; justify-content: center; z-index: 10; }
+  #win.show { display: flex; }
+  #win .box { background: #fff; border-radius: 16px; padding: 26px 36px; text-align: center;
+              box-shadow: 0 10px 40px rgba(0,0,0,.28); animation: popin .22s ease; }
+  @keyframes popin { from { transform: scale(.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  #win .tick { font-size: 40px; line-height: 1; margin-bottom: 4px; }
+  #win h2 { margin: 0 0 12px; font-size: 22px; }
+  #win .row { margin: 5px 0; font-size: 16px; }
+  #win .btns { margin-top: 16px; display: flex; gap: 10px; justify-content: center; }
+  #win .btns button { font-size: 15px; padding: 9px 20px; border: 1px solid #c4c0b2; border-radius: 8px; background: #fff; cursor: pointer; }
+  #win .btns button.primary { background: #2f80ed; color: #fff; border-color: #2f80ed; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <span></span>
+    <span class="title" id="levelTitle">接水管 · 第 1 关</span>
+    <button id="restart">↻ 重新开始</button>
+  </header>
+  <div id="boardCard">
+    <div id="boardWrap">
+      <svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </div>
+  <footer>
+    <div class="stats">旋转 <span class="num" id="count">0</span> 次　最佳 <span class="num" id="best">--</span></div>
+    <div class="hint" id="hint">点击水管，让它顺时针旋转 90°。</div>
+    <div class="controls">
+      <button id="undo">↶ 撤回一步</button>
+      <span class="sep">│</span>
+      <button id="prev">上一关</button>
+      <select id="levelSelect"></select>
+      <button id="next">下一关</button>
+    </div>
+  </footer>
+</div>
+<div id="win">
+  <div class="box">
+    <div class="tick">✅</div>
+    <h2>通关！</h2>
+    <div class="row">本次：<span id="wCur"></span> 次</div>
+    <div class="row">最佳：<span id="wBest"></span> 次</div>
+    <div class="btns">
+      <button id="wReplay">再玩一次</button>
+      <button class="primary" id="wNext">下一关</button>
+    </div>
+  </div>
+</div>
+<script>
+/* ============ 关卡数据（来自《接水管10关设计数据.md》，待试玩冻结） ============ */
+/* 开口位掩码：上=1 右=2 下=4 左=8 */
+var LEVELS = [
+  {rows:3, cols:4, sourceRow:2, exitRow:2, path:[[2,1],[2,2],[3,2],[3,3],[2,3],[2,4]], turns:[1,1,1,1,1,1], decoys:[]},
+  {rows:3, cols:5, sourceRow:2, exitRow:2, path:[[2,1],[2,2],[1,2],[1,3],[1,4],[2,4],[2,5]], turns:[1,2,1,0,3,1,1], decoys:[]},
+  {rows:4, cols:4, sourceRow:3, exitRow:3, path:[[3,1],[2,1],[1,1],[1,2],[2,2],[3,2],[3,3],[3,4]], turns:[1,1,2,3,1,2,1,0], decoys:[]},
+  {rows:4, cols:5, sourceRow:2, exitRow:2, path:[[2,1],[2,2],[3,2],[4,2],[4,3],[3,3],[2,3],[1,3],[1,4],[2,4],[2,5]], turns:[1,3,1,3,3,1,0,2,2,2,0], decoys:[]},
+  {rows:5, cols:5, sourceRow:3, exitRow:3, path:[[3,1],[2,1],[1,1],[1,2],[2,2],[3,2],[4,2],[4,3],[3,3],[2,3],[2,4],[3,4],[4,4],[5,4],[5,5],[4,5],[3,5]], turns:[3,1,1,2,1,0,1,1,1,3,2,0,0,1,0,0,1], decoys:[]},
+  {rows:5, cols:6, sourceRow:2, exitRow:2, path:[[2,1],[2,2],[1,2],[1,3],[1,4],[2,4],[3,4],[3,3],[4,3],[5,3],[5,4],[5,5],[4,5],[3,5],[2,5],[2,6]], turns:[1,2,3,1,2,0,1,2,1,3,0,1,1,1,0,0], decoys:[]},
+  {rows:5, cols:6, sourceRow:4, exitRow:4, path:[[4,1],[3,1],[2,1],[2,2],[3,2],[4,2],[5,2],[5,3],[4,3],[3,3],[2,3],[1,3],[1,4],[2,4],[3,4],[3,5],[4,5],[4,6]], turns:[3,1,1,2,0,1,0,3,1,1,1,2,2,1,3,2,3,1], decoys:[[1,1,10],[5,6,5]]},
+  {rows:6, cols:6, sourceRow:3, exitRow:3, path:[[3,1],[3,2],[2,2],[1,2],[1,3],[2,3],[3,3],[4,3],[5,3],[5,4],[4,4],[3,4],[2,4],[2,5],[3,5],[4,5],[5,5],[6,5],[6,6],[5,6],[4,6],[3,6]], turns:[1,1,1,3,1,1,1,0,1,1,1,0,0,0,0,1,1,3,3,1,1,3], decoys:[[1,6,9],[6,1,10]]},
+  {rows:6, cols:7, sourceRow:4, exitRow:4, path:[[4,1],[3,1],[2,1],[1,1],[1,2],[1,3],[2,3],[2,2],[3,2],[4,2],[5,2],[6,2],[6,3],[6,4],[5,4],[4,4],[3,4],[3,5],[2,5],[1,5],[1,6],[2,6],[3,6],[4,6],[5,6],[5,7],[4,7]], turns:[0,1,0,1,0,0,3,0,1,1,1,2,1,0,1,1,3,3,1,2,2,1,1,1,2,1,0], decoys:[[6,6,5],[2,7,10]]},
+  {rows:7, cols:7, sourceRow:4, exitRow:4, path:[[4,1],[5,1],[6,1],[7,1],[7,2],[6,2],[5,2],[4,2],[3,2],[2,2],[1,2],[1,3],[2,3],[3,3],[4,3],[5,3],[6,3],[6,4],[5,4],[4,4],[3,4],[2,4],[2,5],[3,5],[4,5],[5,5],[6,5],[7,5],[7,6],[6,6],[5,6],[4,6],[4,7]], turns:[3,1,1,2,0,0,1,0,1,1,3,1,0,1,1,0,2,3,0,1,1,2,3,0,1,1,1,2,2,0,1,2,0], decoys:[[1,5,5],[1,7,6],[7,7,10]]},
+  {rows:7, cols:8, sourceRow:4, exitRow:4, path:[[4,1],[5,1],[6,1],[7,1],[7,2],[7,3],[6,3],[6,2],[5,2],[4,2],[3,2],[2,2],[1,2],[1,3],[2,3],[2,4],[1,4],[1,5],[2,5],[3,5],[3,4],[3,3],[4,3],[5,3],[5,4],[6,4],[7,4],[7,5],[6,5],[6,6],[7,6],[7,7],[6,7],[5,7],[5,6],[5,5],[4,5],[4,6],[3,6],[2,6],[1,6],[1,7],[2,7],[2,8],[3,8],[3,7],[4,7],[4,8]], turns:[2,1,1,2,0,1,2,0,0,1,1,1,2,0,1,1,0,3,0,3,0,1,0,2,2,0,1,3,2,1,0,1,1,3,0,2,0,2,1,1,3,2,1,1,2,2,1,1]},
+  {rows:8, cols:8, sourceRow:4, exitRow:4, path:[[4,1],[3,1],[2,1],[1,1],[1,2],[2,2],[2,3],[1,3],[1,4],[2,4],[3,4],[3,3],[3,2],[4,2],[5,2],[6,2],[7,2],[7,1],[8,1],[8,2],[8,3],[8,4],[7,4],[7,3],[6,3],[5,3],[5,4],[6,4],[6,5],[7,5],[8,5],[8,6],[8,7],[7,7],[7,6],[6,6],[5,6],[5,5],[4,5],[3,5],[2,5],[1,5],[1,6],[2,6],[2,7],[1,7],[1,8],[2,8],[3,8],[3,7],[3,6],[4,6],[4,7],[5,7],[6,7],[6,8],[5,8],[4,8]], turns:[0,1,0,2,1,3,1,2,1,0,2,1,0,1,0,1,3,1,1,1,0,2,3,0,1,0,2,1,2,1,0,1,1,3,3,0,1,3,1,1,0,0,1,2,1,2,2,1,2,1,3,0,3,0,0,2,0,3]},
+  {rows:8, cols:9, sourceRow:3, exitRow:3, path:[[3,1],[2,1],[1,1],[1,2],[1,3],[2,3],[2,2],[3,2],[4,2],[5,2],[6,2],[7,2],[8,2],[8,3],[7,3],[7,4],[8,4],[8,5],[7,5],[6,5],[6,4],[6,3],[5,3],[4,3],[4,4],[5,4],[5,5],[5,6],[6,6],[7,6],[8,6],[8,7],[7,7],[7,8],[8,8],[8,9],[7,9],[6,9],[6,8],[6,7],[5,7],[4,7],[4,6],[4,5],[3,5],[2,5],[2,4],[1,4],[1,5],[1,6],[2,6],[2,7],[1,7],[1,8],[2,8],[3,8],[4,8],[5,8],[5,9],[4,9],[3,9]], turns:[1,1,0,0,3,3,3,0,1,0,0,1,2,1,3,3,1,1,1,3,0,3,1,1,3,3,0,1,1,0,2,0,2,0,2,2,1,0,0,3,0,0,0,1,0,2,2,1,1,2,3,1,1,3,1,1,1,1,0,1,0], decoys:[[3,7,5],[4,1,5]]},
+  {rows:8, cols:9, sourceRow:5, exitRow:5, path:[[5,1],[6,1],[7,1],[8,1],[8,2],[7,2],[7,3],[8,3],[8,4],[8,5],[7,5],[7,4],[6,4],[6,3],[6,2],[5,2],[4,2],[3,2],[2,2],[2,1],[1,1],[1,2],[1,3],[1,4],[2,4],[2,3],[3,3],[4,3],[4,4],[3,4],[3,5],[2,5],[1,5],[1,6],[1,7],[2,7],[2,6],[3,6],[4,6],[4,5],[5,5],[6,5],[6,6],[7,6],[8,6],[8,7],[8,8],[7,8],[7,7],[6,7],[5,7],[4,7],[3,7],[3,8],[2,8],[1,8],[1,9],[2,9],[3,9],[4,9],[4,8],[5,8],[6,8],[6,9],[5,9]], turns:[3,1,1,3,2,3,2,1,1,0,2,1,2,1,3,1,1,1,3,0,2,0,0,1,2,1,1,3,1,3,2,0,0,1,3,3,3,0,1,1,0,1,1,0,1,1,2,3,0,1,1,1,3,1,1,2,2,1,0,2,0,1,3,2,3], decoys:[[5,3,5],[3,1,5]]},
+  {rows:9, cols:9, sourceRow:4, exitRow:4, path:[[4,1],[5,1],[6,1],[7,1],[8,1],[9,1],[9,2],[9,3],[8,3],[8,2],[7,2],[7,3],[6,3],[6,2],[5,2],[5,3],[5,4],[6,4],[7,4],[8,4],[9,4],[9,5],[9,6],[8,6],[8,5],[7,5],[6,5],[6,6],[7,6],[7,7],[8,7],[9,7],[9,8],[8,8],[8,9],[7,9],[7,8],[6,8],[6,7],[5,7],[5,6],[5,5],[4,5],[3,5],[2,5],[2,4],[2,3],[2,2],[1,2],[1,3],[1,4],[1,5],[1,6],[1,7],[2,7],[2,6],[3,6],[3,7],[3,8],[2,8],[1,8],[1,9],[2,9],[3,9],[4,9]], turns:[1,1,1,1,0,3,1,0,2,2,2,2,3,3,0,1,3,1,1,1,0,0,0,0,3,1,2,1,2,1,0,2,2,1,1,0,0,1,0,0,0,1,0,1,3,1,0,1,1,0,0,1,1,3,3,0,2,0,3,1,1,1,1,1,3], decoys:[[3,1,5],[5,9,5],[4,4,5]]},
+  {rows:9, cols:10, sourceRow:5, exitRow:5, path:[[5,1],[6,1],[7,1],[8,1],[9,1],[9,2],[9,3],[8,3],[8,2],[7,2],[7,3],[6,3],[6,2],[5,2],[4,2],[3,2],[2,2],[1,2],[1,3],[2,3],[2,4],[1,4],[1,5],[2,5],[2,6],[1,6],[1,7],[2,7],[3,7],[3,6],[3,5],[3,4],[3,3],[4,3],[4,4],[5,4],[6,4],[7,4],[8,4],[9,4],[9,5],[8,5],[8,6],[9,6],[9,7],[9,8],[8,8],[8,7],[7,7],[7,6],[7,5],[6,5],[6,6],[5,6],[4,6],[4,7],[4,8],[3,8],[2,8],[1,8],[1,9],[2,9],[3,9],[3,10],[4,10],[4,9],[5,9],[6,9],[7,9],[8,9],[9,9],[9,10],[8,10],[7,10],[6,10],[5,10]], turns:[0,1,1,1,2,1,1,1,0,1,1,2,3,0,0,0,0,2,0,1,1,3,1,2,1,3,1,1,3,1,1,1,1,1,0,0,0,1,1,2,0,3,2,2,1,1,3,3,1,0,2,2,0,0,2,0,0,1,0,3,0,1,3,0,1,3,0,0,1,1,1,2,1,0,1,3], decoys:[[1,1,5],[5,8,5],[7,8,5]]},
+  {rows:9, cols:10, sourceRow:4, exitRow:4, path:[[4,1],[3,1],[2,1],[1,1],[1,2],[2,2],[2,3],[1,3],[1,4],[2,4],[2,5],[1,5],[1,6],[2,6],[3,6],[3,5],[3,4],[3,3],[3,2],[4,2],[5,2],[6,2],[7,2],[8,2],[8,1],[9,1],[9,2],[9,3],[9,4],[8,4],[8,3],[7,3],[6,3],[6,4],[7,4],[7,5],[8,5],[9,5],[9,6],[8,6],[8,7],[9,7],[9,8],[8,8],[8,9],[9,9],[9,10],[8,10],[7,10],[7,9],[7,8],[7,7],[7,6],[6,6],[6,5],[5,5],[5,4],[5,3],[4,3],[4,4],[4,5],[4,6],[5,6],[5,7],[6,7],[6,8],[6,9],[5,9],[5,8],[4,8],[3,8],[2,8],[1,8],[1,9],[2,9],[3,9],[3,10],[4,10]], turns:[0,1,1,1,3,0,3,2,0,0,0,2,1,1,2,1,1,1,1,0,1,0,0,3,2,1,1,1,0,0,2,1,3,3,0,2,1,2,3,2,0,1,2,3,2,1,2,1,1,1,1,0,3,3,3,3,1,1,2,0,1,1,0,3,3,1,0,2,0,0,0,1,2,2,0,1,1,1], decoys:[[3,7,5],[5,1,5],[6,1,5],[2,7,5]]},
+  {rows:10, cols:10, sourceRow:6, exitRow:6, path:[[6,1],[7,1],[8,1],[9,1],[10,1],[10,2],[10,3],[9,3],[9,2],[8,2],[7,2],[7,3],[8,3],[8,4],[9,4],[10,4],[10,5],[10,6],[9,6],[9,5],[8,5],[7,5],[7,4],[6,4],[5,4],[4,4],[4,3],[4,2],[3,2],[2,2],[1,2],[1,3],[2,3],[2,4],[1,4],[1,5],[1,6],[2,6],[2,5],[3,5],[4,5],[4,6],[3,6],[3,7],[2,7],[1,7],[1,8],[1,9],[2,9],[2,8],[3,8],[4,8],[4,7],[5,7],[5,6],[5,5],[6,5],[6,6],[7,6],[8,6],[8,7],[9,7],[10,7],[10,8],[9,8],[9,9],[10,9],[10,10],[9,10],[8,10],[8,9],[8,8],[7,8],[7,7],[6,7],[6,8],[5,8],[5,9],[4,9],[3,9],[3,10],[4,10],[5,10],[6,10]], turns:[1,0,0,1,3,0,2,2,3,0,0,1,2,3,1,0,1,2,0,3,0,3,2,0,1,2,0,2,1,1,1,3,3,3,2,1,0,2,3,0,2,2,0,2,0,1,0,3,0,1,1,2,3,2,0,0,2,2,0,1,2,1,1,1,2,0,2,0,1,3,0,2,3,3,3,2,2,0,1,3,3,0,0,2], decoys:[[2,1,5],[6,9,5],[7,10,5],[7,9,5]]},
+  {rows:10, cols:11, sourceRow:5, exitRow:5, path:[[5,1],[6,1],[7,1],[8,1],[9,1],[10,1],[10,2],[10,3],[9,3],[9,2],[8,2],[7,2],[7,3],[8,3],[8,4],[9,4],[10,4],[10,5],[9,5],[9,6],[10,6],[10,7],[10,8],[9,8],[9,7],[8,7],[8,6],[8,5],[7,5],[7,4],[6,4],[6,3],[6,2],[5,2],[4,2],[3,2],[2,2],[2,1],[1,1],[1,2],[1,3],[2,3],[2,4],[1,4],[1,5],[2,5],[3,5],[3,4],[3,3],[4,3],[4,4],[4,5],[4,6],[3,6],[2,6],[1,6],[1,7],[1,8],[2,8],[2,7],[3,7],[4,7],[4,8],[3,8],[3,9],[2,9],[1,9],[1,10],[2,10],[3,10],[4,10],[4,9],[5,9],[6,9],[6,8],[6,7],[6,6],[7,6],[7,7],[7,8],[8,8],[8,9],[9,9],[10,9],[10,10],[9,10],[8,10],[7,10],[7,11],[6,11],[6,10],[5,10],[5,11]], turns:[2,0,1,1,0,1,0,2,0,2,1,0,2,3,2,1,2,1,2,1,1,1,3,0,0,0,1,3,1,1,0,1,2,0,0,0,1,2,2,0,2,0,2,0,2,0,1,1,2,3,1,1,1,0,1,2,1,2,2,1,0,3,2,3,2,0,3,0,1,1,3,0,1,2,0,0,1,1,1,2,3,2,0,3,2,1,1,0,3,3,3,3,1], decoys:[[10,11,5],[4,1,5],[7,9,5],[5,7,5],[6,5,5]], locked:[1,23,45,67]},
+  {rows:10, cols:12, sourceRow:6, exitRow:6, path:[[6,1],[7,1],[8,1],[9,1],[10,1],[10,2],[10,3],[9,3],[9,2],[8,2],[8,3],[8,4],[9,4],[10,4],[10,5],[10,6],[9,6],[9,5],[8,5],[7,5],[7,4],[7,3],[7,2],[6,2],[5,2],[4,2],[3,2],[2,2],[2,1],[1,1],[1,2],[1,3],[2,3],[2,4],[1,4],[1,5],[1,6],[2,6],[2,5],[3,5],[3,4],[3,3],[4,3],[4,4],[5,4],[5,3],[6,3],[6,4],[6,5],[5,5],[4,5],[4,6],[3,6],[3,7],[2,7],[1,7],[1,8],[2,8],[2,9],[1,9],[1,10],[2,10],[3,10],[3,9],[3,8],[4,8],[4,7],[5,7],[5,6],[6,6],[7,6],[8,6],[8,7],[9,7],[10,7],[10,8],[10,9],[9,9],[9,8],[8,8],[7,8],[7,7],[6,7],[6,8],[5,8],[5,9],[4,9],[4,10],[4,11],[3,11],[2,11],[1,11],[1,12],[2,12],[3,12],[4,12],[5,12],[5,11],[5,10],[6,10],[7,10],[8,10],[9,10],[10,10],[10,11],[9,11],[9,12],[8,12],[8,11],[7,11],[6,11],[6,12]], turns:[0,0,1,0,2,1,2,3,1,1,1,2,1,1,1,1,2,3,0,2,0,1,1,0,0,1,1,2,2,0,0,3,1,3,0,1,2,1,3,2,1,0,3,1,3,0,1,0,1,1,0,0,1,1,1,3,0,0,2,0,1,1,1,1,3,2,1,0,0,1,0,3,3,0,3,1,0,1,0,1,1,2,2,3,1,3,1,0,0,0,1,1,2,1,0,1,2,0,3,1,1,1,0,3,1,3,1,2,0,0,1,1], decoys:[[5,1,5],[10,12,5],[6,9,5],[7,9,5],[7,12,5],[8,9,5]], locked:[1,23,45,67,89]}
+];
+
+/* ============ 纯逻辑（可独立测试） ============ */
+var DIRDELTA = {1:{dr:-1,dc:0}, 2:{dr:0,dc:1}, 4:{dr:1,dc:0}, 8:{dr:0,dc:-1}};
+function rotCW(m) { return ((m << 1) & 15) | (m >> 3); }
+function rotCCW(m) { return ((m >> 1) & 15) | ((m << 3) & 15); }
+function flipMask(m) { return ((m << 2) & 15) | ((m >> 2) & 15); }
+function dirMask(dr, dc) { if (dr === -1) return 1; if (dr === 1) return 4; if (dc === 1) return 2; return 8; }
+function key(r, c) { return r + ',' + c; }
+
+function correctOpenings(lv) {
+  var res = [], path = lv.path, i;
+  for (i = 0; i < path.length; i++) {
+    var r = path[i][0], c = path[i][1], m = 0;
+    if (i === 0) {
+      m = 8;
+      m |= dirMask(path[1][0] - r, path[1][1] - c);
+    } else if (i === path.length - 1) {
+      m = 2;
+      m |= flipMask(dirMask(r - path[i-1][0], c - path[i-1][1]));
+    } else {
+      m |= flipMask(dirMask(r - path[i-1][0], c - path[i-1][1]));
+      m |= dirMask(path[i+1][0] - r, path[i+1][1] - c);
+    }
+    res.push(m);
+  }
+  return res;
+}
+
+function initialMasks(lv) {
+  var correct = correctOpenings(lv), masks = {}, i, k;
+  for (i = 0; i < lv.path.length; i++) {
+    var m = correct[i], t = lv.turns[i], n;
+    for (n = 0; n < t; n++) m = rotCCW(m);
+    masks[key(lv.path[i][0], lv.path[i][1])] = m;
+  }
+  for (k = 0; k < (lv.decoys || []).length; k++) {
+    var d = lv.decoys[k];
+    masks[key(d[0], d[1])] = d[2];
+  }
+  return masks;
+}
+
+function connected(masks, lv) {
+  var start = lv.path[0], target = lv.path[lv.path.length - 1];
+  if (!(masks[key(start[0], start[1])] & 8)) return false;
+  var seen = {}, stack = [start], d, nr, nc, nk, bit;
+  seen[key(start[0], start[1])] = 1;
+  while (stack.length) {
+    var cell = stack.pop(), m = masks[key(cell[0], cell[1])];
+    for (d = 0; d < 4; d++) {
+      bit = 1 << d;
+      if (!(m & bit)) continue;
+      nr = cell[0] + DIRDELTA[bit].dr; nc = cell[1] + DIRDELTA[bit].dc;
+      if (nr === target[0] && nc === target[1]) {
+        /* 到达出口格：出口管道必须开口对接水流方向，且开口朝右连接出口 */
+        var tm = masks[key(target[0], target[1])];
+        if ((tm & flipMask(bit)) && (tm & 2)) return true;
+        continue;
+      }
+      if (nr >= 1 && nr <= lv.rows && nc >= 1 && nc <= lv.cols) {
+        nk = key(nr, nc);
+        if (masks[nk] !== undefined && (masks[nk] & flipMask(bit)) && !seen[nk]) {
+          seen[nk] = 1; stack.push([nr, nc]);
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/* ============ 界面状态 ============ */
+var cur = 0;
+var pipes = [];
+var count = 0;
+var undoStack = [];
+var lock = false;
+var finishing = false;
+var winShown = false;
+var idleTimer = null;
+var unlocked = 1;
+var saveData = null;
+
+var svgRoot = document.getElementById('svg');
+var countEl = document.getElementById('count');
+var bestEl = document.getElementById('best');
+var hintEl = document.getElementById('hint');
+var titleEl = document.getElementById('levelTitle');
+var winEl = document.getElementById('win');
+var selEl = document.getElementById('levelSelect');
+var prevBtn = document.getElementById('prev');
+var nextBtn = document.getElementById('next');
+
+function loadSave() {
+  try { saveData = JSON.parse(localStorage.getItem('jieshuiguan_save') || '{}'); }
+  catch (e) { saveData = {}; }
+  if (!saveData || typeof saveData !== 'object') saveData = {};
+  if (!saveData.best || typeof saveData.best !== 'object') saveData.best = {};
+  unlocked = (typeof saveData.unlocked === 'number' && saveData.unlocked >= 1) ? saveData.unlocked : 1;
+}
+function persist() { try { localStorage.setItem('jieshuiguan_save', JSON.stringify(saveData)); } catch (e) {} }
+function showBest() {
+  var b = saveData.best[cur];
+  bestEl.textContent = (b === undefined || b === null) ? '--' : b;
+}
+
+function loadLevel(idx) {
+  cur = idx;
+  var lv = LEVELS[cur];
+  var masks = initialMasks(lv);
+  pipes = [];
+  var i;
+  for (i = 0; i < lv.path.length; i++) {
+    var locked = lv.locked && lv.locked.indexOf(i) >= 0;
+    pipes.push({r: lv.path[i][0], c: lv.path[i][1], mask: masks[key(lv.path[i][0], lv.path[i][1])], decoy: false, locked: !!locked});
+  }
+  for (i = 0; i < (lv.decoys || []).length; i++) {
+    var d = lv.decoys[i];
+    pipes.push({r: d[0], c: d[1], mask: d[2], decoy: true});
+  }
+  count = 0; undoStack = []; winShown = false; lock = false; finishing = false;
+  winEl.classList.remove('show');
+  titleEl.textContent = '接水管 · 第 ' + (cur + 1) + ' 关';
+  selEl.value = String(cur + 1);
+  countEl.textContent = '0';
+  hintEl.textContent = '点击水管，让它顺时针旋转 90°。';
+  showBest();
+  renderBoard();
+  updateNav();
+  resetIdle();
+}
+
+function boardGeom() {
+  var lv = LEVELS[cur];
+  var cell = Math.min(58, 360 / Math.max(lv.rows, lv.cols));
+  var margin = 46;
+  return {cell: cell, margin: margin, W: margin * 2 + lv.cols * cell, H: margin * 2 + lv.rows * cell};
+}
+
+function svgEl(name, attrs) {
+  var el = document.createElementNS('http://www.w3.org/2000/svg', name);
+  for (var k in attrs) if (attrs.hasOwnProperty(k)) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+function renderBoard() {
+  var lv = LEVELS[cur];
+  var g = boardGeom();
+  svgRoot.setAttribute('viewBox', '0 0 ' + g.W + ' ' + g.H);
+  svgRoot.setAttribute('width', g.W); svgRoot.setAttribute('height', g.H);
+  var html = '';
+  var r, c;
+  for (r = 1; r <= lv.rows; r++) {
+    for (c = 1; c <= lv.cols; c++) {
+      var isPath = findPipe(r, c) !== null;
+      html += '<rect x="' + (g.margin + (c - 1) * g.cell + 2) + '" y="' + (g.margin + (r - 1) * g.cell + 2) +
+              '" width="' + (g.cell - 4) + '" height="' + (g.cell - 4) + '" rx="7" class="' +
+              (isPath ? 'cell-active' : 'cell-inactive') + '"/>';
+    }
+  }
+  svgRoot.innerHTML = html;
+  var i, p;
+  for (i = 0; i < pipes.length; i++) {
+    p = pipes[i];
+    var seg = svgEl('g', {'class': 'seg', 'data-key': key(p.r, p.c)});
+    var cx = g.margin + (p.c - 0.5) * g.cell, cy = g.margin + (p.r - 0.5) * g.cell;
+    var bits = [1, 2, 4, 8], j;
+    for (j = 0; j < 4; j++) {
+      var bit = bits[j];
+      if (p.mask & bit) {
+        var dd = DIRDELTA[bit];
+        seg.appendChild(svgEl('line', {
+          x1: cx, y1: cy, x2: cx + dd.dc * g.cell * 0.34, y2: cy + dd.dr * g.cell * 0.34,
+          'class': 'pipe-line'
+        }));
+      }
+    }
+    seg.appendChild(svgEl('circle', {cx: cx, cy: cy, r: 5, 'class': 'pipe-hub'}));
+    if (p.locked) {
+      var lg = svgEl('g', {'class': 'lock-badge'});
+      var bg = svgEl('rect', {x: cx - g.cell*0.24, y: cy - g.cell*0.44, width: g.cell*0.48, height: g.cell*0.32, rx: g.cell*0.08});
+      var tx = svgEl('text', {'class': 'lock-badge-text', 'text-anchor': 'middle', x: cx, y: cy - g.cell*0.19, 'font-size': g.cell*0.28 + 'px'});
+      tx.textContent = '锁';
+      lg.appendChild(bg); lg.appendChild(tx);
+      seg.appendChild(lg);
+    }
+    seg.addEventListener('click', (function (rr, cc) {
+      return function () { onCellClick(rr, cc); };
+    })(p.r, p.c));
+    svgRoot.appendChild(seg);
+  }
+  var sy = g.margin + (lv.sourceRow - 0.5) * g.cell, ey = g.margin + (lv.exitRow - 0.5) * g.cell;
+  var sText = svgEl('text', {x: 8, y: sy + 5, 'class': 'edge-label'});
+  sText.textContent = '水源 →';
+  svgRoot.appendChild(sText);
+  var eText = svgEl('text', {x: g.W - 58, y: ey + 5, 'class': 'edge-label'});
+  eText.textContent = '→ 出口';
+  svgRoot.appendChild(eText);
+  updatePipeStyle();
+}
+
+/* 从水源出发沿当前开口可达的主路段（干扰管不参与，始终显示默认色） */
+function connectedSegments() {
+  var lv = LEVELS[cur];
+  var pathSet = {}, masks = collectMasks();
+  lv.path.forEach(function (p) { pathSet[key(p[0], p[1])] = true; });
+  var seen = {};
+  var start = lv.path[0];
+  if (!(masks[key(start[0], start[1])] & 8)) return seen;
+  var stack = [start];
+  seen[key(start[0], start[1])] = true;
+  while (stack.length) {
+    var cell = stack.pop(), m = masks[key(cell[0], cell[1])], d, bit;
+    for (d = 0; d < 4; d++) {
+      bit = 1 << d;
+      if (!(m & bit)) continue;
+      var nr = cell[0] + DIRDELTA[bit].dr, nc = cell[1] + DIRDELTA[bit].dc;
+      var nk = key(nr, nc);
+      if (pathSet[nk] && (masks[nk] & flipMask(bit)) && !seen[nk]) {
+        seen[nk] = true; stack.push([nr, nc]);
+      }
+    }
+  }
+  return seen;
+}
+
+function updatePipeStyle() {
+  var lit = connectedSegments();
+  var segs = svgRoot.querySelectorAll('.seg'), i;
+  for (i = 0; i < segs.length; i++) {
+    var k = segs[i].getAttribute('data-key');
+    var on = lit[k] === true;
+    var lines = segs[i].querySelectorAll('.pipe-line'), j;
+    for (j = 0; j < lines.length; j++) {
+      if (on) lines[j].classList.add('lit'); else lines[j].classList.remove('lit');
+    }
+    var hubs = segs[i].querySelectorAll('.pipe-hub');
+    for (j = 0; j < hubs.length; j++) {
+      if (on) hubs[j].classList.add('lit'); else hubs[j].classList.remove('lit');
+    }
+  }
+}
+
+function findPipe(r, c) {
+  for (var i = 0; i < pipes.length; i++) if (pipes[i].r === r && pipes[i].c === c) return pipes[i];
+  return null;
+}
+
+function onCellClick(r, c) {
+  if (lock || winShown || finishing) return;
+  var p = findPipe(r, c);
+  if (!p) return;
+  if (p.locked) {
+    hintEl.textContent = '🔒 这根水管被固定了，不能旋转。';
+    resetIdle();
+    return;
+  }
+  undoStack.push({r: r, c: c, prev: p.mask});
+  p.mask = rotCW(p.mask);
+  count++;
+  countEl.textContent = String(count);
+  var seg = svgRoot.querySelector('.seg[data-key="' + key(r, c) + '"]');
+  if (seg) {
+    redrawSeg(seg, p);
+    seg.classList.remove('pop');
+    void seg.offsetWidth;
+    seg.classList.add('pop');
+  }
+  if (count === 1) hintEl.textContent = '让相邻水管的开口对在一起。';
+  resetIdle();
+  updatePipeStyle();
+  if (connected(collectMasks(), LEVELS[cur])) finish();
+}
+
+/* 按当前方向重绘一段管道的管口线条（旋转后必须重画，否则看起来没转） */
+function redrawSeg(seg, p) {
+  var g = boardGeom();
+  var cx = g.margin + (p.c - 0.5) * g.cell, cy = g.margin + (p.r - 0.5) * g.cell;
+  var lines = seg.querySelectorAll('.pipe-line'), i;
+  for (i = lines.length - 1; i >= 0; i--) seg.removeChild(lines[i]);
+  var bits = [1, 2, 4, 8], j;
+  for (j = 0; j < 4; j++) {
+    var bit = bits[j];
+    if (p.mask & bit) {
+      var dd = DIRDELTA[bit];
+      var ln = svgEl('line', {
+        x1: cx, y1: cy, x2: cx + dd.dc * g.cell * 0.34, y2: cy + dd.dr * g.cell * 0.34,
+        'class': 'pipe-line'
+      });
+      seg.insertBefore(ln, seg.querySelector('.pipe-hub'));
+    }
+  }
+}
+
+function collectMasks() {
+  var masks = {}, i;
+  for (i = 0; i < pipes.length; i++) masks[key(pipes[i].r, pipes[i].c)] = pipes[i].mask;
+  return masks;
+}
+
+function finish() {
+  finishing = true;
+  lock = true;
+  var lv = LEVELS[cur];
+  var stepDelay = Math.min(90, Math.round(1200 / lv.path.length));
+  var i;
+  for (i = 0; i < lv.path.length; i++) {
+    (function (idx) {
+      setTimeout(function () {
+        updatePipeStyle();
+        var seg = svgRoot.querySelector('.seg[data-key="' + key(lv.path[idx][0], lv.path[idx][1]) + '"]');
+        if (seg) {
+          seg.classList.remove('pop');
+          void seg.offsetWidth;
+          seg.classList.add('pop');
+        }
+        if (idx === lv.path.length - 1) {
+          lock = false; finishing = false; winShown = true;
+          var prevBest = saveData.best[cur];
+          if (prevBest === undefined || prevBest === null || count < prevBest) {
+            saveData.best[cur] = count; persist(); showBest();
+          }
+          document.getElementById('wCur').textContent = String(count);
+          document.getElementById('wBest').textContent = String(saveData.best[cur]);
+          if (cur + 1 >= LEVELS.length) {
+            document.getElementById('wNext').style.display = 'none';
+          } else {
+            document.getElementById('wNext').style.display = '';
+          }
+          winEl.classList.add('show');
+          if (cur + 1 >= unlocked) { unlocked = cur + 2; saveData.unlocked = unlocked; persist(); updateNav(); }
+        }
+      }, stepDelay * (idx + 1));
+    })(i);
+  }
+}
+
+function onUndo() {
+  if (lock || winShown || !undoStack.length) return;
+  var u = undoStack.pop();
+  var p = findPipe(u.r, u.c);
+  p.mask = u.prev;
+  count--;
+  countEl.textContent = String(count);
+  hintEl.textContent = count > 0 ? '让相邻水管的开口对在一起。' : '点击水管，让它顺时针旋转 90°。';
+  resetIdle();
+  updatePipeStyle();
+}
+
+function updateNav() {
+  prevBtn.disabled = (cur === 0);
+  nextBtn.disabled = (cur + 1 >= unlocked) || (cur + 1 >= LEVELS.length);
+  var opts = selEl.options, i;
+  for (i = 0; i < opts.length; i++) {
+    opts[i].textContent = '第 ' + (i + 1) + ' 关' + (i + 1 <= unlocked ? '' : '（未解锁）');
+  }
+}
+
+function resetIdle() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(function () {
+    if (!winShown) hintEl.textContent = '从左侧水源开始，一段一段检查。';
+  }, 20000);
+}
+
+(function fillSelect() {
+  for (var i = 1; i <= LEVELS.length; i++) {
+    var o = document.createElement('option');
+    o.value = String(i);
+    selEl.appendChild(o);
+  }
+})();
+
+document.getElementById('restart').addEventListener('click', function () { loadLevel(cur); });
+document.getElementById('undo').addEventListener('click', onUndo);
+prevBtn.addEventListener('click', function () { if (lock) return; loadLevel(cur - 1); });
+nextBtn.addEventListener('click', function () {
+  if (lock) return;
+  if (cur + 1 < LEVELS.length && cur + 1 < unlocked) loadLevel(cur + 1);
+});
+selEl.addEventListener('change', function () {
+  if (lock) return;
+  loadLevel(parseInt(selEl.value, 10) - 1);
+});
+document.getElementById('wReplay').addEventListener('click', function () { loadLevel(cur); });
+document.getElementById('wNext').addEventListener('click', function () {
+  if (cur + 1 < LEVELS.length) loadLevel(cur + 1);
+});
+
+loadSave();
+loadLevel(0);
+</script>
+</body>
+</html>

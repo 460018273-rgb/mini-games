@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>围棋 AI 对战</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#efebe1;color:#2c2c2c;min-height:100vh}
+#app{display:flex;gap:20px;padding:20px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+#board-wrap{flex-shrink:0}
+#board-canvas{display:block;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.15)}
+#panel{width:270px;background:#fff;border-radius:12px;padding:18px;border:1px solid #e5e2da;display:flex;flex-direction:column;gap:14px}
+#panel h1{font-size:18px;font-weight:600;text-align:center;padding-bottom:10px;border-bottom:1px solid #f0ede5}
+.section{display:flex;flex-direction:column;gap:5px}
+.section label{font-size:11px;color:#999;font-weight:500;text-transform:uppercase;letter-spacing:.5px}
+select{width:100%;padding:7px 10px;border:1px solid #ddd;border-radius:6px;font-size:14px;background:#fff;cursor:pointer}
+select:focus{outline:none;border-color:#8a8070}
+.buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button{padding:9px 12px;border:1px solid #ddd;border-radius:6px;background:#f8f7f3;cursor:pointer;font-size:14px;color:#444;transition:all .15s}
+button:hover{background:#edeae0;border-color:#c5c0b0}
+button:active{background:#e0ddd3}
+button:disabled{opacity:.4;cursor:not-allowed}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.info-cell{background:#f8f7f3;border-radius:6px;padding:8px 10px;text-align:center}
+.info-cell .lbl{font-size:11px;color:#999;margin-bottom:2px}
+.info-cell .val{font-size:16px;font-weight:600}
+.status-bar{padding:10px;border-radius:6px;text-align:center;font-size:14px;font-weight:500;transition:all .3s}
+.status-bar.idle{background:#f8f7f3;color:#666}
+.status-bar.thinking{background:#fff3e0;color:#e65100}
+.status-bar.done{background:#e8f5e9;color:#2e7d32}
+.status-bar.warn{background:#fbe9e7;color:#c62828}
+.moves-wrap{flex:1;display:flex;flex-direction:column;min-height:0}
+.moves-title{font-size:11px;color:#999;font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.moves-list{max-height:180px;overflow-y:auto;font-family:"SF Mono",Consolas,monospace;font-size:12px;line-height:1.8;background:#faf9f6;border-radius:6px;padding:8px 10px;border:1px solid #f0ede5}
+.moves-list:empty::after{content:"尚无落子";color:#ccc;font-style:italic}
+.move-item{display:inline-block;margin-right:12px;white-space:nowrap}
+.move-item .b{color:#1a1a1a;font-weight:700}
+.move-item .w{color:#888}
+.help{font-size:12px;line-height:1.55;color:#777;background:#faf9f6;border:1px solid #f0ede5;border-radius:6px;padding:9px 10px}
+.help summary{cursor:pointer;color:#555;font-weight:600}
+.help p{margin-top:7px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal-overlay.hidden{display:none}
+.modal-box{background:#fff;border-radius:14px;padding:32px 40px;text-align:center;min-width:300px;box-shadow:0 8px 40px rgba(0,0,0,.2)}
+.modal-box h2{font-size:20px;margin-bottom:8px}
+.modal-box p{font-size:14px;color:#666;margin-bottom:20px}
+.modal-box button{padding:10px 30px}
+@media(max-width:680px){#app{padding:10px}#panel{width:100%;max-width:580px}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="board-wrap"><canvas id="board-canvas"></canvas></div>
+  <aside id="panel">
+    <h1>围棋 AI 对战</h1>
+    <div class="section">
+      <label>棋盘</label>
+      <select id="sel-size">
+        <option value="19">19 × 19（标准）</option>
+        <option value="13">13 × 13</option>
+        <option value="9">9 × 9（入门）</option>
+      </select>
+    </div>
+    <div class="section">
+      <label>执棋</label>
+      <select id="sel-color">
+        <option value="1">执黑（先手）</option>
+        <option value="2">执白（后手）</option>
+      </select>
+    </div>
+    <div class="section">
+      <label>AI 难度</label>
+      <select id="sel-difficulty">
+        <option value="easy">入门（随机性大）</option>
+        <option value="medium" selected>进阶（战术与棋形）</option>
+        <option value="hard">挑战（两层预测）</option>
+      </select>
+    </div>
+    <div class="buttons">
+      <button id="btn-new">新局</button>
+      <button id="btn-undo">悔棋</button>
+      <button id="btn-pass">过手</button>
+      <button id="btn-resign">认输</button>
+    </div>
+    <div class="info-grid">
+      <div class="info-cell"><div class="lbl">当前</div><div class="val" id="info-turn">黑</div></div>
+      <div class="info-cell"><div class="lbl">手数</div><div class="val" id="info-moves">0</div></div>
+      <div class="info-cell"><div class="lbl">黑提</div><div class="val" id="info-cap-b">0</div></div>
+      <div class="info-cell"><div class="lbl">白提</div><div class="val" id="info-cap-w">0</div></div>
+    </div>
+    <div class="status-bar idle" id="status">点击棋盘落子</div>
+    <details class="help">
+      <summary>规则与难度说明</summary>
+      <p>采用中国数子法：活子与围住的空点都计分，白棋贴目。禁止自杀与立即还原棋形的简单劫，双方连续过手终局。本版未提供死子标记，终局前请先提掉死子。</p>
+      <p>入门会在较合理的候选点中随机选择；进阶会评估提子、逃棋、打吃、连接和布局；挑战还会预测对手的最强回应。</p>
+    </details>
+    <div class="moves-wrap">
+      <div class="moves-title">棋谱</div>
+      <div class="moves-list" id="moves-list"></div>
+    </div>
+  </aside>
+</div>
+<div class="modal-overlay hidden" id="modal">
+  <div class="modal-box">
+    <h2 id="modal-title">对局结束</h2>
+    <p id="modal-text"></p>
+    <button id="btn-modal-close">确定</button>
+  </div>
+</div>
+<script>
+"use strict";
+var BLACK=1,WHITE=2;
+var DIRS=[[0,1],[0,-1],[1,0],[-1,0]];
+var STARS={9:[[2,2],[2,6],[6,2],[6,6],[4,4]],13:[[3,3],[3,9],[9,3],[9,9],[6,6]],19:[[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]]};
+var KOMI={9:5.5,13:6.5,19:7.5};
+var LETTERS="ABCDEFGHJKLMNOPQRST";
+function coordStr(x,y,size){return LETTERS[x]+(size-y)}
+
+function GoBoard(size){
+  this.size=size;
+  this.cells=new Array(size*size).fill(0);
+  this.prevHash=null;
+}
+GoBoard.prototype.get=function(x,y){return this.cells[y*this.size+x]};
+GoBoard.prototype.set=function(x,y,v){this.cells[y*this.size+x]=v};
+GoBoard.prototype.inBounds=function(x,y){return x>=0&&x<this.size&&y>=0&&y<this.size};
+GoBoard.prototype.clone=function(){
+  var b=new GoBoard(this.size);
+  b.cells=this.cells.slice();
+  b.prevHash=this.prevHash;
+  return b;
+};
+GoBoard.prototype.hash=function(){return this.cells.join("")};
+GoBoard.prototype.getGroup=function(x,y){
+  var color=this.get(x,y);
+  if(color===0)return null;
+  var stones=[],libSet={},visited={},stack=[[x,y]];
+  while(stack.length){
+    var pt=stack.pop(),cx=pt[0],cy=pt[1],key=cy*this.size+cx;
+    if(visited[key])continue;
+    visited[key]=1;
+    stones.push([cx,cy]);
+    for(var i=0;i<4;i++){
+      var nx=cx+DIRS[i][0],ny=cy+DIRS[i][1];
+      if(!this.inBounds(nx,ny))continue;
+      var nk=ny*this.size+nx,nc=this.get(nx,ny);
+      if(nc===0)libSet[nk]=1;
+      else if(nc===color&&!visited[nk])stack.push([nx,ny]);
+    }
+  }
+  return{stones:stones,liberties:Object.keys(libSet).length};
+};
+GoBoard.prototype.tryMove=function(x,y,color){
+  if(this.get(x,y)!==0)return{ok:false,reason:"occupied"};
+  var nb=this.clone();
+  nb.set(x,y,color);
+  var opp=color===BLACK?WHITE:BLACK,captures=0;
+  for(var i=0;i<4;i++){
+    var nx=x+DIRS[i][0],ny=y+DIRS[i][1];
+    if(!nb.inBounds(nx,ny))continue;
+    if(nb.get(nx,ny)===opp){
+      var g=nb.getGroup(nx,ny);
+      if(g.liberties===0){
+        for(var j=0;j<g.stones.length;j++){nb.set(g.stones[j][0],g.stones[j][1],0);captures++}
+      }
+    }
+  }
+  var og=nb.getGroup(x,y);
+  if(og.liberties===0)return{ok:false,reason:"suicide"};
+  if(this.prevHash!==null&&nb.hash()===this.prevHash)return{ok:false,reason:"ko"};
+  nb.prevHash=this.hash();
+  return{ok:true,captures:captures,board:nb};
+};
+GoBoard.prototype.getRelevantMoves=function(){
+  var set={},hasStones=false;
+  for(var y=0;y<this.size;y++)for(var x=0;x<this.size;x++){
+    if(this.cells[y*this.size+x]!==0){
+      hasStones=true;
+      for(var dy=-2;dy<=2;dy++)for(var dx=-2;dx<=2;dx++){
+        var nx=x+dx,ny=y+dy;
+        if(this.inBounds(nx,ny)&&this.get(nx,ny)===0)set[ny*this.size+nx]=1;
+      }
+    }
+  }
+  if(!hasStones){var c=Math.floor(this.size/2);return[{x:c,y:c}]}
+  var arr=[];
+  for(var k in set)arr.push({x:k%this.size,y:Math.floor(k/this.size)});
+  return arr;
+};
+GoBoard.prototype.isEye=function(x,y,color){
+  for(var i=0;i<4;i++){
+    var nx=x+DIRS[i][0],ny=y+DIRS[i][1];
+    if(!this.inBounds(nx,ny))continue;
+    if(this.get(nx,ny)!==color)return false;
+  }
+  var opp=color===BLACK?WHITE:BLACK,diagOpp=0,onEdge=false;
+  for(var dx=-1;dx<=1;dx+=2)for(var dy=-1;dy<=1;dy+=2){
+    var nx=x+dx,ny=y+dy;
+    if(!this.inBounds(nx,ny)){onEdge=true;continue}
+    if(this.get(nx,ny)===opp)diagOpp++;
+  }
+  if(onEdge&&diagOpp>0)return false;
+  if(diagOpp>1)return false;
+  return true;
+};
+GoBoard.prototype.score=function(){
+  var visited={},bArea=0,wArea=0;
+  for(var i=0;i<this.cells.length;i++){
+    if(this.cells[i]===BLACK)bArea++;
+    else if(this.cells[i]===WHITE)wArea++;
+  }
+  for(var y=0;y<this.size;y++)for(var x=0;x<this.size;x++){
+    var key=y*this.size+x;
+    if(visited[key]||this.cells[key]!==0)continue;
+    var region=[],borders={},queue=[[x,y]],qi=0;
+    while(qi<queue.length){
+      var cx=queue[qi][0],cy=queue[qi][1];qi++;
+      var ck=cy*this.size+cx;
+      if(visited[ck])continue;
+      visited[ck]=1;
+      region.push(ck);
+      for(var i=0;i<4;i++){
+        var nx=cx+DIRS[i][0],ny=cy+DIRS[i][1];
+        if(!this.inBounds(nx,ny))continue;
+        var nc=this.get(nx,ny);
+        if(nc===0)queue.push([nx,ny]);
+        else borders[nc]=1;
+      }
+    }
+    var bc=borders[BLACK],wc=borders[WHITE];
+    if(bc&&!wc)bArea+=region.length;
+    else if(wc&&!bc)wArea+=region.length;
+  }
+  var komi=KOMI[this.size]||7.5;
+  return{black:bArea,white:wArea+komi,komi:komi};
+};
+
+function GoAI(){}
+GoAI.prototype.getMove=function(board,color,difficulty,context){
+  var scored=this.rankMoves(board,color);
+  if(!scored.length)return null;
+  if(this.shouldPass(board,scored,context))return null;
+  if(difficulty==="easy"){
+    var pool=scored.slice(0,Math.min(Math.max(6,Math.ceil(scored.length*0.12)),18));
+    return pool[Math.floor(Math.random()*pool.length)].move;
+  }
+  if(difficulty==="medium"){
+    var top=scored.slice(0,Math.min(4,scored.length));
+    var pick=Math.random(),idx=pick<0.62?0:(pick<0.84?1:(pick<0.95?2:3));
+    return top[Math.min(idx,top.length-1)].move;
+  }
+  return this.lookaheadMove(board,color,scored);
+};
+GoAI.prototype.rankMoves=function(board,color){
+  var scored=[];
+  for(var y=0;y<board.size;y++)for(var x=0;x<board.size;x++){
+    if(board.get(x,y)!==0)continue;
+    var r=board.tryMove(x,y,color);
+    if(!r.ok)continue;
+    if(board.isEye(x,y,color)&&r.captures===0)continue;
+    var sc=this.evalMove(board,r.board,x,y,color,r.captures);
+    scored.push({move:{x:x,y:y},score:sc,result:r});
+  }
+  scored.sort(function(a,b){return b.score-a.score});
+  return scored;
+};
+GoAI.prototype.lookaheadMove=function(board,color,scored){
+  var top=scored.slice(0,Math.min(12,scored.length));
+  var opp=color===BLACK?WHITE:BLACK;
+  for(var i=0;i<top.length;i++){
+    var replies=this.rankMoves(top[i].result.board,opp);
+    var replyScore=replies.length?replies[0].score:0;
+    top[i].searchScore=top[i].score-replyScore*0.72;
+    var ownAfter=top[i].result.board.getGroup(top[i].move.x,top[i].move.y);
+    if(ownAfter&&ownAfter.liberties===1)top[i].searchScore-=12;
+  }
+  top.sort(function(a,b){return b.searchScore-a.searchScore});
+  return top[0].move;
+};
+GoAI.prototype.shouldPass=function(board,scored,context){
+  var stones=0;
+  for(var i=0;i<board.cells.length;i++)if(board.cells[i]!==0)stones++;
+  var fill=stones/board.cells.length,best=scored[0];
+  if(!context||!context.lastWasPass)return false;
+  if(best.result.captures>0)return false;
+  return fill>0.58&&best.score<13;
+};
+GoAI.prototype.groupKey=function(group){
+  var min=Infinity;
+  for(var i=0;i<group.stones.length;i++){
+    var k=group.stones[i][1]*100+group.stones[i][0];
+    if(k<min)min=k;
+  }
+  return String(min);
+};
+GoAI.prototype.evalMove=function(oldBoard,nb,x,y,color,captures){
+  var opp=color===BLACK?WHITE:BLACK,score=captures*18;
+  var friendly={},enemy={},saved=0;
+  for(var i=0;i<4;i++){
+    var nx=x+DIRS[i][0],ny=y+DIRS[i][1];
+    if(!oldBoard.inBounds(nx,ny))continue;
+    var nc=oldBoard.get(nx,ny),g,key;
+    if(nc===color){
+      g=oldBoard.getGroup(nx,ny);key=this.groupKey(g);friendly[key]=1;
+      if(g.liberties===1)saved+=g.stones.length;
+    }else if(nc===opp){
+      g=oldBoard.getGroup(nx,ny);key=this.groupKey(g);enemy[key]=1;
+    }
+  }
+  score+=saved*13;
+  var friendlyCount=Object.keys(friendly).length,enemyCount=Object.keys(enemy).length;
+  if(friendlyCount>=2)score+=(friendlyCount-1)*5;
+  if(enemyCount>=2)score+=(enemyCount-1)*4;
+  for(i=0;i<4;i++){
+    nx=x+DIRS[i][0];ny=y+DIRS[i][1];
+    if(!nb.inBounds(nx,ny)||nb.get(nx,ny)!==opp)continue;
+    var eg=nb.getGroup(nx,ny);
+    if(eg.liberties===1)score+=eg.stones.length*8+5;
+    else if(eg.liberties===2)score+=Math.min(eg.stones.length,5)*2;
+  }
+  var ownG=nb.getGroup(x,y);
+  score+=Math.min(ownG.liberties,8)*1.3;
+  if(ownG.liberties===1&&captures===0)score-=32;
+  else if(ownG.liberties===2&&captures===0)score-=5;
+
+  var stoneCount=0,near1=0,near2=0,nearest=99;
+  for(i=0;i<oldBoard.cells.length;i++){
+    if(oldBoard.cells[i]===0)continue;
+    stoneCount++;
+    var sx=i%oldBoard.size,sy=Math.floor(i/oldBoard.size);
+    var d=Math.max(Math.abs(sx-x),Math.abs(sy-y));
+    if(d<nearest)nearest=d;
+    if(d===1)near1++;else if(d===2)near2++;
+  }
+  score+=near1*0.8+near2*0.35;
+  if(nearest>=3&&nearest<=6)score+=2.5;
+  if(near1>=3&&captures===0)score-=3;
+
+  var openingLimit=Math.max(12,Math.floor(oldBoard.size*1.2));
+  if(stoneCount<openingLimit){
+    var edge=Math.min(x,y,oldBoard.size-1-x,oldBoard.size-1-y);
+    if(edge===0)score-=10;
+    else if(edge===1)score-=4;
+    else if(edge===2)score+=oldBoard.size===9?8:6;
+    else if(edge===3)score+=oldBoard.size>=13?8:2;
+    var ex=Math.min(x,oldBoard.size-1-x),ey=Math.min(y,oldBoard.size-1-y);
+    if((ex===2||ex===3)&&(ey===2||ey===3))score+=7;
+    var center=(oldBoard.size-1)/2;
+    if(oldBoard.size>=13&&Math.abs(x-center)<2&&Math.abs(y-center)<2)score-=4;
+  }
+  return score;
+};
+
+function Renderer(canvas){
+  this.canvas=canvas;
+  this.ctx=canvas.getContext("2d");
+  this.hoverPos=null;
+}
+Renderer.prototype.setup=function(size){
+  this.size=size;
+  var maxS=580,availW,availH=window.innerHeight-40;
+  if(window.innerWidth>700){availW=Math.min(window.innerWidth-320,maxS)}
+  else{availW=Math.min(window.innerWidth-40,maxS)}
+  var ds=Math.max(300,Math.min(availW,availH,maxS));
+  var dpr=window.devicePixelRatio||1;
+  this.canvas.width=ds*dpr;
+  this.canvas.height=ds*dpr;
+  this.canvas.style.width=ds+"px";
+  this.canvas.style.height=ds+"px";
+  this.ctx.setTransform(1,0,0,1,0,0);
+  this.ctx.scale(dpr,dpr);
+  this.ds=ds;
+  this.margin=ds>400?30:22;
+  this.cellSize=(ds-2*this.margin)/(size-1);
+  this.stoneR=this.cellSize*0.46;
+};
+Renderer.prototype.boardToPx=function(x,y){
+  return{px:this.margin+x*this.cellSize,py:this.margin+y*this.cellSize};
+};
+Renderer.prototype.pxToBoard=function(px,py){
+  var x=Math.round((px-this.margin)/this.cellSize);
+  var y=Math.round((py-this.margin)/this.cellSize);
+  if(x<0||x>=this.size||y<0||y>=this.size)return null;
+  var bx=this.margin+x*this.cellSize,by=this.margin+y*this.cellSize;
+  if(Math.abs(px-bx)>this.cellSize*0.5||Math.abs(py-by)>this.cellSize*0.5)return null;
+  return{x:x,y:y};
+};
+Renderer.prototype.drawStone=function(px,py,color){
+  var ctx=this.ctx,r=this.stoneR;
+  var grad=ctx.createRadialGradient(px-r*0.3,py-r*0.3,r*0.1,px,py,r);
+  if(color===BLACK){grad.addColorStop(0,"#5a5a5a");grad.addColorStop(1,"#0d0d0d")}
+  else{grad.addColorStop(0,"#ffffff");grad.addColorStop(1,"#c8c4be")}
+  ctx.fillStyle=grad;
+  ctx.beginPath();
+  ctx.arc(px,py,r,0,Math.PI*2);
+  ctx.fill();
+};
+Renderer.prototype.draw=function(board,lastMove,currentColor,playerCanMove){
+  var ctx=this.ctx,s=this.ds;
+  ctx.fillStyle="#dcb35c";
+  ctx.fillRect(0,0,s,s);
+  ctx.fillStyle="rgba(200,160,80,0.15)";
+  for(var i=0;i<s;i+=4){
+    ctx.fillRect(0,i,s,2);
+  }
+  ctx.strokeStyle="#3a2810";
+  ctx.lineWidth=1;
+  var gridEnd=this.margin+(this.size-1)*this.cellSize;
+  for(i=0;i<this.size;i++){
+    var p=this.margin+i*this.cellSize;
+    ctx.beginPath();ctx.moveTo(this.margin,p);ctx.lineTo(gridEnd,p);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(p,this.margin);ctx.lineTo(p,gridEnd);ctx.stroke();
+  }
+  ctx.lineWidth=1.5;
+  ctx.strokeRect(this.margin,this.margin,gridEnd-this.margin,gridEnd-this.margin);
+  ctx.fillStyle="#3a2810";
+  var stars=STARS[this.size]||[];
+  for(i=0;i<stars.length;i++){
+    var sp=this.boardToPx(stars[i][0],stars[i][1]);
+    ctx.beginPath();
+    ctx.arc(sp.px,sp.py,this.cellSize>30?3.5:2.5,0,Math.PI*2);
+    ctx.fill();
+  }
+  ctx.fillStyle="#8a7050";
+  ctx.font="11px sans-serif";
+  ctx.textAlign="center";
+  ctx.textBaseline="middle";
+  for(i=0;i<this.size;i++){
+    p=this.margin+i*this.cellSize;
+    ctx.fillText(LETTERS[i],p,this.margin/2);
+    ctx.fillText(LETTERS[i],p,s-this.margin/2);
+    ctx.fillText(String(this.size-i),this.margin/2,p);
+    ctx.fillText(String(this.size-i),s-this.margin/2,p);
+  }
+  for(var y=0;y<this.size;y++)for(var x=0;x<this.size;x++){
+    var c=board.get(x,y);
+    if(c===0)continue;
+    var pp=this.boardToPx(x,y);
+    this.drawStone(pp.px,pp.py,c);
+  }
+  if(lastMove){
+    var lp=this.boardToPx(lastMove.x,lastMove.y);
+    ctx.fillStyle=lastMove.color===BLACK?"#fff":"#000";
+    ctx.beginPath();
+    ctx.arc(lp.px,lp.py,this.stoneR*0.3,0,Math.PI*2);
+    ctx.fill();
+  }
+  if(playerCanMove&&this.hoverPos&&board.get(this.hoverPos.x,this.hoverPos.y)===0){
+    var hp=this.boardToPx(this.hoverPos.x,this.hoverPos.y);
+    ctx.globalAlpha=0.45;
+    this.drawStone(hp.px,hp.py,currentColor);
+    ctx.globalAlpha=1;
+  }
+};
+
+function Game(){
+  this.size=19;
+  this.playerColor=BLACK;
+  this.difficulty="medium";
+  this.ai=new GoAI();
+  this.newGame(19,BLACK,"medium");
+}
+Game.prototype.newGame=function(size,pc,diff){
+  this.gameId=(this.gameId||0)+1;
+  this.size=size;
+  this.playerColor=pc;
+  this.difficulty=diff;
+  this.board=new GoBoard(size);
+  this.history=[];
+  this.currentPlayer=BLACK;
+  this.consecutivePasses=0;
+  this.gameOver=false;
+  this.blackCaps=0;
+  this.whiteCaps=0;
+  this.aiThinking=false;
+  this.result=null;
+  this._modalShown=false;
+};
+Game.prototype.lastMove=function(){
+  if(!this.history.length)return null;
+  var h=this.history[this.history.length-1];
+  return{x:h.x,y:h.y,color:h.color};
+};
+Game.prototype.playMove=function(x,y){
+  if(this.gameOver||this.aiThinking)return false;
+  if(this.currentPlayer!==this.playerColor)return false;
+  var color=this.currentPlayer;
+  var r=this.board.tryMove(x,y,color);
+  if(!r.ok)return false;
+  this.history.push({x:x,y:y,color:color,snapshot:this.board.clone(),captures:r.captures});
+  this.board=r.board;
+  if(color===BLACK)this.blackCaps+=r.captures;else this.whiteCaps+=r.captures;
+  this.currentPlayer=color===BLACK?WHITE:BLACK;
+  this.consecutivePasses=0;
+  return true;
+};
+Game.prototype.pass=function(){
+  if(this.gameOver||this.aiThinking)return;
+  if(this.currentPlayer!==this.playerColor)return;
+  this.history.push({x:-1,y:-1,color:this.currentPlayer,snapshot:this.board.clone(),captures:0,pass:true});
+  this.currentPlayer=this.currentPlayer===BLACK?WHITE:BLACK;
+  this.consecutivePasses++;
+  if(this.consecutivePasses>=2)this.endGame();
+};
+Game.prototype.undo=function(){
+  if(!this.history.length||this.aiThinking||this.gameOver)return;
+  var toPop=1;
+  if(this.history.length>=2){
+    var last=this.history[this.history.length-1];
+    if(last.color!==this.playerColor)toPop=2;
+  }
+  var snap=null;
+  for(var i=0;i<toPop&&this.history.length>0;i++){
+    var p=this.history.pop();
+    if(p.color===BLACK)this.blackCaps-=p.captures;else this.whiteCaps-=p.captures;
+    snap=p.snapshot;
+  }
+  if(snap)this.board=snap.clone();
+  this.consecutivePasses=0;
+  if(this.history.length===0){
+    this.currentPlayer=BLACK;
+  }else{
+    this.currentPlayer=this.playerColor;
+  }
+};
+Game.prototype.resign=function(){
+  if(this.gameOver)return;
+  this.gameOver=true;
+  this.result={winner:this.playerColor===BLACK?WHITE:BLACK,resigned:true};
+};
+Game.prototype.aiTurn=function(){
+  var self=this,gameId=this.gameId;
+  this.aiThinking=true;
+  updateUI();
+  setTimeout(function(){
+    if(self.gameId!==gameId)return;
+    var color=self.currentPlayer;
+    var last=self.history.length?self.history[self.history.length-1]:null;
+    var move=self.ai.getMove(self.board,color,self.difficulty,{lastWasPass:!!(last&&last.pass)});
+    if(move===null){
+      self.history.push({x:-1,y:-1,color:color,snapshot:self.board.clone(),captures:0,pass:true});
+      self.currentPlayer=color===BLACK?WHITE:BLACK;
+      self.consecutivePasses++;
+      if(self.consecutivePasses>=2)self.endGame();
+    }else{
+      var r=self.board.tryMove(move.x,move.y,color);
+      if(r.ok){
+        self.history.push({x:move.x,y:move.y,color:color,snapshot:self.board.clone(),captures:r.captures});
+        self.board=r.board;
+        if(color===BLACK)self.blackCaps+=r.captures;else self.whiteCaps+=r.captures;
+        self.currentPlayer=color===BLACK?WHITE:BLACK;
+        self.consecutivePasses=0;
+      }
+    }
+    self.aiThinking=false;
+    updateUI();
+  },300);
+};
+Game.prototype.endGame=function(){
+  this.gameOver=true;
+  var s=this.board.score();
+  this.result={winner:s.black>s.white?BLACK:WHITE,score:s,resigned:false};
+};
+
+var game,renderer;
+
+function redraw(){
+  var lm=game.lastMove();
+  game.lm=(lm&&lm.x>=0)?lm:null;
+  var canMove=!game.gameOver&&!game.aiThinking&&game.currentPlayer===game.playerColor;
+  renderer.draw(game.board,game.lm,game.currentPlayer,canMove);
+}
+function updateUI(){
+  document.getElementById("info-turn").textContent=game.currentPlayer===BLACK?"黑":"白";
+  document.getElementById("info-turn").style.color=game.currentPlayer===BLACK?"#1a1a1a":"#888";
+  document.getElementById("info-moves").textContent=game.history.length;
+  document.getElementById("info-cap-b").textContent=game.blackCaps;
+  document.getElementById("info-cap-w").textContent=game.whiteCaps;
+  var st=document.getElementById("status");
+  st.className="status-bar idle";
+  if(game.gameOver){
+    if(game.result){
+      if(game.result.resigned){
+        st.textContent=(game.result.winner===BLACK?"黑":"白")+"胜（对方认输）";
+      }else{
+        var s=game.result.score;
+        var win=s.black>s.white?"黑":"白";
+        var diff=Math.abs(s.black-s.white).toFixed(1);
+        st.textContent=win+"胜 "+diff+"目";
+      }
+      st.className="status-bar done";
+    }
+  }else if(game.aiThinking){
+    st.textContent="AI 思考中…";
+    st.className="status-bar thinking";
+  }else if(game.currentPlayer===game.playerColor){
+    st.textContent="请落子";
+  }else{
+    st.textContent="等待 AI…";
+  }
+  var ml=document.getElementById("moves-list");
+  ml.innerHTML="";
+  for(var i=0;i<game.history.length;i++){
+    var h=game.history[i];
+    var sp=document.createElement("span");
+    sp.className="move-item";
+    var sym=h.color===BLACK?"<span class='b'>●</span>":"<span class='w'>○</span>";
+    var coord=h.pass?"pass":coordStr(h.x,h.y,game.size);
+    var cap=h.captures>0?" (提"+h.captures+")":"";
+    sp.innerHTML=(i+1)+"."+sym+" "+coord+cap;
+    ml.appendChild(sp);
+  }
+  ml.scrollTop=ml.scrollHeight;
+  document.getElementById("btn-undo").disabled=!game.history.length||game.aiThinking||game.gameOver;
+  document.getElementById("btn-pass").disabled=game.aiThinking||game.gameOver||game.currentPlayer!==game.playerColor;
+  document.getElementById("btn-resign").disabled=game.gameOver;
+  if(game.gameOver&&game.result&&!game._modalShown){
+    game._modalShown=true;
+    showModal(game.result);
+  }
+  redraw();
+}
+function showModal(result){
+  var t=document.getElementById("modal-title");
+  var tx=document.getElementById("modal-text");
+  if(result.resigned){
+    t.textContent=(result.winner===BLACK?"黑棋":"白棋")+"胜利";
+    tx.textContent="对方认输";
+  }else{
+    var s=result.score;
+    var win=s.black>s.white?"黑棋":"白棋";
+    var diff=Math.abs(s.black-s.white).toFixed(1);
+    t.textContent=win+"胜 "+diff+"目";
+    tx.textContent="黑 "+s.black+"  ／  白 "+s.white+"（含贴目 "+s.komi+"）";
+  }
+  document.getElementById("modal").classList.remove("hidden");
+}
+function startNewGame(){
+  var size=parseInt(document.getElementById("sel-size").value);
+  var color=parseInt(document.getElementById("sel-color").value);
+  var diff=document.getElementById("sel-difficulty").value;
+  renderer.setup(size);
+  game.newGame(size,color,diff);
+  document.getElementById("modal").classList.add("hidden");
+  updateUI();
+  if(game.playerColor===WHITE&&!game.gameOver)game.aiTurn();
+}
+function initEvents(){
+  var canvas=document.getElementById("board-canvas");
+  canvas.addEventListener("click",function(e){
+    if(game.gameOver||game.aiThinking)return;
+    if(game.currentPlayer!==game.playerColor)return;
+    var rect=canvas.getBoundingClientRect();
+    var px=e.clientX-rect.left,py=e.clientY-rect.top;
+    var pos=renderer.pxToBoard(px,py);
+    if(!pos)return;
+    if(game.playMove(pos.x,pos.y)){
+      updateUI();
+      if(!game.gameOver)game.aiTurn();
+    }else{
+      var st=document.getElementById("status");
+      var prev=st.textContent,pc=st.className;
+      var check=game.board.tryMove(pos.x,pos.y,game.playerColor);
+      var reasons={occupied:"这里已有棋子",suicide:"禁止自杀",ko:"劫争：不能立即提回"};
+      st.textContent=reasons[check.reason]||"禁着点";st.className="status-bar warn";
+      setTimeout(function(){st.textContent=prev;st.className=pc},1200);
+    }
+  });
+  canvas.addEventListener("mousemove",function(e){
+    if(game.gameOver||game.aiThinking||game.currentPlayer!==game.playerColor){
+      if(renderer.hoverPos){renderer.hoverPos=null;redraw()}
+      return;
+    }
+    var rect=canvas.getBoundingClientRect();
+    var pos=renderer.pxToBoard(e.clientX-rect.left,e.clientY-rect.top);
+    if(pos&&game.board.get(pos.x,pos.y)===0){
+      if(!renderer.hoverPos||renderer.hoverPos.x!==pos.x||renderer.hoverPos.y!==pos.y){
+        renderer.hoverPos=pos;redraw();
+      }
+    }else if(renderer.hoverPos){
+      renderer.hoverPos=null;redraw();
+    }
+  });
+  canvas.addEventListener("mouseleave",function(){
+    if(renderer.hoverPos){renderer.hoverPos=null;redraw()}
+  });
+  document.getElementById("btn-new").addEventListener("click",startNewGame);
+  document.getElementById("btn-undo").addEventListener("click",function(){
+    game.undo();updateUI();
+    if(!game.gameOver&&!game.aiThinking&&game.currentPlayer!==game.playerColor)game.aiTurn();
+  });
+  document.getElementById("btn-pass").addEventListener("click",function(){
+    if(game.gameOver||game.aiThinking)return;
+    if(game.currentPlayer!==game.playerColor)return;
+    game.pass();updateUI();
+    if(!game.gameOver)game.aiTurn();
+  });
+  document.getElementById("btn-resign").addEventListener("click",function(){
+    if(game.gameOver)return;
+    game.resign();updateUI();
+  });
+  document.getElementById("btn-modal-close").addEventListener("click",function(){
+    document.getElementById("modal").classList.add("hidden");
+  });
+  document.getElementById("sel-size").addEventListener("change",startNewGame);
+  document.getElementById("sel-color").addEventListener("change",startNewGame);
+  document.getElementById("sel-difficulty").addEventListener("change",startNewGame);
+  window.addEventListener("resize",function(){
+    renderer.setup(game.size);redraw();
+  });
+}
+window.addEventListener("DOMContentLoaded",function(){
+  renderer=new Renderer(document.getElementById("board-canvas"));
+  game=new Game();
+  initEvents();
+  startNewGame();
+});
+</script>
+</body>
+</html>
